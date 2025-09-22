@@ -1,0 +1,29 @@
+{
+  "uploadId": "b39e3926302b9ce45bbc8ce1c21aaf6c",
+  "videoId": "",
+  "metadata": {
+    "filename": "recovered-video.mp4",
+    "clientName": "test-client",
+    "projectName": "test-project",
+    "totalSize": 51200
+  },
+  "progress": {
+    "uploadedSize": 0,
+    "chunkSize": 1048576,
+    "lastChunkIndex": 0,
+    "completedChunks": []
+  },
+  "integrity": {
+    "chunkChecksums": {}
+  },
+  "timing": {
+    "startTime": "2025-09-21T09:32:42.506Z",
+    "lastActivity": "2025-09-21T09:32:42.506Z"
+  },
+  "status": {
+    "current": "active",
+    "retryCount": 0,
+    "maxRetries": 3,
+    "lastError": "No request body available for streaming"
+  }
+}

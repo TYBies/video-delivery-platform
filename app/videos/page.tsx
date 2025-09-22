@@ -1,0 +1,165 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
+type Video = {
+  id: string;
+  filename: string;
+  clientName: string;
+  projectName: string;
+  uploadDate: string;
+  fileSize: number;
+  status: 'local' | 'backed-up' | 'cloud-only';
+  isActive: boolean;
+};
+
+export default function VideosPage() {
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
+  const [busyId, setBusyId] = useState<string>('');
+  const [health, setHealth] = useState<any>(null);
+  const [running, setRunning] = useState<boolean>(false);
+  const [selfTest, setSelfTest] = useState<any>(null);
+
+  const loadVideos = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const res = await fetch('/api/video', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setVideos(Array.isArray(data) ? data : []);
+    } catch (e: any) {
+      setError(`Failed to load videos: ${e.message || e}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadHealth = async () => {
+    try {
+      const res = await fetch('/api/system/health', { cache: 'no-store' });
+      const data = await res.json();
+      if (data.success) setHealth(data.health);
+      else setHealth(data.health);
+    } catch {}
+  };
+
+  useEffect(() => {
+    loadVideos();
+    loadHealth();
+  }, []);
+
+  const deleteVideo = async (id: string) => {
+    if (!confirm('Delete this video and its metadata?')) return;
+    setBusyId(id);
+    try {
+      const res = await fetch(`/api/video/${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await loadVideos();
+    } catch (e: any) {
+      alert(`Delete failed: ${e.message || e}`);
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const runStartup = async () => {
+    setRunning(true);
+    try {
+      await fetch('/api/system/startup', { method: 'POST' });
+      await Promise.all([loadVideos(), loadHealth()]);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const runRecovery = async () => {
+    setRunning(true);
+    try {
+      await fetch('/api/system/recovery', { method: 'POST' });
+      await Promise.all([loadVideos(), loadHealth()]);
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const runStorageSelfTest = async () => {
+    setRunning(true);
+    setSelfTest(null);
+    try {
+      const res = await fetch('/api/system/storage-selftest', { method: 'POST' });
+      const data = await res.json();
+      setSelfTest(data);
+    } catch (e) {
+      setSelfTest({ success: false, error: String(e) });
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const fmtSize = (bytes: number) => {
+    if (bytes >= 1024 * 1024 * 1024) return `${Math.round(bytes / 1024 / 1024 / 1024 * 100) / 100} GB`;
+    return `${Math.round(bytes / 1024 / 1024 * 100) / 100} MB`;
+  };
+
+  return (
+    <main style={{ maxWidth: '900px', margin: '0 auto', padding: '20px' }}>
+      <h1>Videos</h1>
+
+      <div style={{ display: 'flex', gap: '10px', margin: '15px 0' }}>
+        <a href="/upload" style={{ padding: '8px 12px', background: '#007bff', color: 'white', borderRadius: 4, textDecoration: 'none' }}>Upload</a>
+        <button onClick={loadVideos} disabled={loading} style={{ padding: '8px 12px' }}>{loading ? 'Refreshing...' : 'Refresh'}</button>
+        <button onClick={runStartup} disabled={running} style={{ padding: '8px 12px' }}>{running ? 'Working...' : 'Run Startup Tasks'}</button>
+        <button onClick={runRecovery} disabled={running} style={{ padding: '8px 12px' }}>{running ? 'Working...' : 'Run Recovery'}</button>
+        <button onClick={runStorageSelfTest} disabled={running} style={{ padding: '8px 12px' }}>{running ? 'Testing...' : 'Test Storage'}</button>
+      </div>
+
+      {health && (
+        <div style={{ background: '#f8f9fa', border: '1px solid #dee2e6', borderRadius: 4, padding: 12, marginBottom: 16, fontSize: 14 }}>
+          <strong>System Health:</strong> {health.systemStatus} | Active uploads: {health.activeUploads} | Orphans: {health.orphanedFiles}
+        </div>
+      )}
+
+      {error && (
+        <div style={{ background: '#f8d7da', color: '#721c24', padding: 10, borderRadius: 4, marginBottom: 12 }}>{error}</div>
+      )}
+
+      {selfTest && (
+        <div style={{ background: selfTest.success ? '#d4edda' : '#f8d7da', color: selfTest.success ? '#155724' : '#721c24', padding: 12, borderRadius: 4, marginBottom: 12, fontSize: 14 }}>
+          <div><strong>Storage Self-Test:</strong> {selfTest.success ? 'OK' : 'FAILED'}</div>
+          {!selfTest.success && (
+            <div style={{ marginTop: 6 }}>
+              <div>put: {String(selfTest.put)}</div>
+              <div>head: {String(selfTest.head)} {selfTest.headError && `(${selfTest.headError})`}</div>
+              <div>get: {String(selfTest.get)} {selfTest.getError && `(${selfTest.getError})`}</div>
+              <div>deleted: {String(selfTest.deleted)} {selfTest.deleteError && `(${selfTest.deleteError})`}</div>
+              {selfTest.error && <div>Error: {selfTest.error}</div>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {videos.length === 0 && !loading && (
+        <div style={{ color: '#666' }}>No videos yet. Upload one to get started.</div>
+      )}
+
+      <div>
+        {videos.map(v => (
+          <div key={v.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #eee' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600 }}>{v.filename}</div>
+              <div style={{ fontSize: 13, color: '#666' }}>{v.clientName} • {v.projectName} • {fmtSize(v.fileSize)} • {new Date(v.uploadDate).toLocaleString()} • {v.status}</div>
+            </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <a href={`/api/download/${v.id}`} style={{ padding: '6px 10px', background: '#17a2b8', color: 'white', borderRadius: 4, textDecoration: 'none' }}>Download</a>
+              <a href={`/api/video/${v.id}`} target="_blank" rel="noreferrer" style={{ padding: '6px 10px', background: '#6c757d', color: 'white', borderRadius: 4, textDecoration: 'none' }}>Details</a>
+              <button onClick={() => deleteVideo(v.id)} disabled={busyId === v.id} style={{ padding: '6px 10px', background: '#dc3545', color: 'white', border: 'none', borderRadius: 4 }}>{busyId === v.id ? 'Deleting...' : 'Delete'}</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </main>
+  );
+}

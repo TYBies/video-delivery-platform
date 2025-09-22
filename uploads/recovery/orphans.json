@@ -1,0 +1,79 @@
+{
+  "lastScan": "2025-09-21T09:22:59.253Z",
+  "orphans": {
+    "demo-orphan-123": {
+      "discoveredDate": "2025-09-21T09:22:59.253Z",
+      "filePath": "",
+      "fileSize": 0,
+      "recoveryAttempts": 2,
+      "recoveryStatus": "recovered",
+      "lastRecoveryAttempt": "2025-09-21T09:23:13.475Z",
+      "reconstructedMetadata": {
+        "id": "demo-orphan-123",
+        "filename": "demo-video.mp4",
+        "clientName": "demo",
+        "projectName": "video.mp4",
+        "uploadDate": "2025-09-21T09:22:42.942Z",
+        "fileSize": 10240,
+        "downloadCount": 0,
+        "status": "local",
+        "localPath": "uploads/videos/demo-orphan-123/demo-video.mp4",
+        "downloadUrl": "/download/demo-orphan-123",
+        "isActive": true,
+        "checksumMD5": "1276481102f218c981e0324180bafd9f"
+      }
+    },
+    "test-orphan-1758447162501": {
+      "discoveredDate": "2025-09-21T09:32:42.505Z",
+      "filePath": "",
+      "fileSize": 0,
+      "recoveryAttempts": 1,
+      "recoveryStatus": "recovered",
+      "lastRecoveryAttempt": "2025-09-21T09:32:42.505Z",
+      "reconstructedMetadata": {
+        "id": "test-orphan-1758447162501",
+        "filename": "recovered-video.mp4",
+        "clientName": "recovered",
+        "projectName": "video.mp4",
+        "uploadDate": "2025-09-21T09:32:42.501Z",
+        "fileSize": 51200,
+        "downloadCount": 0,
+        "status": "local",
+        "localPath": "uploads/videos/test-orphan-1758447162501/recovered-video.mp4",
+        "downloadUrl": "/download/test-orphan-1758447162501",
+        "isActive": true,
+        "checksumMD5": "f20bf8b296c3a428f4a0bfd144f6c9cf"
+      }
+    },
+    "d0131c41-4be0-42d8-8cbc-1f9dd23ca581": {
+      "discoveredDate": "2025-09-21T09:32:42.509Z",
+      "filePath": "",
+      "fileSize": 0,
+      "recoveryAttempts": 2,
+      "recoveryStatus": "invalid",
+      "lastRecoveryAttempt": "2025-09-21T10:01:56.690Z"
+    },
+    "test-orphan-1758447162508": {
+      "discoveredDate": "2025-09-21T09:32:42.511Z",
+      "filePath": "",
+      "fileSize": 0,
+      "recoveryAttempts": 1,
+      "recoveryStatus": "recovered",
+      "lastRecoveryAttempt": "2025-09-21T09:32:42.511Z",
+      "reconstructedMetadata": {
+        "id": "test-orphan-1758447162508",
+        "filename": "recovered-video.mp4",
+        "clientName": "recovered",
+        "projectName": "video.mp4",
+        "uploadDate": "2025-09-21T09:32:42.509Z",
+        "fileSize": 51200,
+        "downloadCount": 0,
+        "status": "local",
+        "localPath": "uploads/videos/test-orphan-1758447162508/recovered-video.mp4",
+        "downloadUrl": "/download/test-orphan-1758447162508",
+        "isActive": true,
+        "checksumMD5": "f20bf8b296c3a428f4a0bfd144f6c9cf"
+      }
+    }
+  }
+}

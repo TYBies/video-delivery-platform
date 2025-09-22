@@ -1,0 +1,546 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+
+export default function UploadPage() {
+  const uploadMode = process.env.NEXT_PUBLIC_UPLOAD_MODE || 'server' // 'server' | 's3'
+  const s3Endpoint = process.env.NEXT_PUBLIC_S3_ENDPOINT || ''
+  const [file, setFile] = useState<File | null>(null);
+  const [clientName, setClientName] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState('');
+  const [diskSpace, setDiskSpace] = useState<any>(null);
+  const [uploadProgress, setUploadProgress] = useState<string>('');
+  const [progressPercent, setProgressPercent] = useState<number>(0);
+  const [uploadSpeed, setUploadSpeed] = useState<string>('');
+  const [enableCompression, setEnableCompression] = useState<boolean>(false);
+  const [compressionQuality, setCompressionQuality] = useState<'professional' | 'high' | 'medium' | 'web'>('high');
+  const [ffmpegAvailable, setFfmpegAvailable] = useState<boolean>(false);
+
+  // Load disk space info and FFmpeg status on component mount
+  useEffect(() => {
+    // Load disk space
+    fetch('/api/disk-space')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setDiskSpace(data);
+        }
+      })
+      .catch(err => console.error('Failed to load disk space:', err));
+
+    // Check FFmpeg availability
+    fetch('/api/ffmpeg-status')
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setFfmpegAvailable(data.ffmpegAvailable);
+        }
+      })
+      .catch(err => console.error('Failed to check FFmpeg status:', err));
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!file || !clientName || !projectName) {
+      setError('Please fill in all fields and select a video file');
+      return;
+    }
+
+    // Check file size (25GB limit for large movies)
+    const maxSize = 25 * 1024 * 1024 * 1024; // 25GB
+    if (file.size > maxSize) {
+      const fileSizeGB = Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100;
+      setError(`File too large. Maximum size is 25GB, your file is ${fileSizeGB} GB`);
+      return;
+    }
+
+    setUploading(true);
+    setError('');
+    setResult(null);
+    setUploadProgress('');
+    setProgressPercent(0);
+    setUploadSpeed('');
+
+    try {
+      if (uploadMode === 's3') {
+        // Direct-to-S3 with presigned POST
+        setUploadProgress('Requesting upload slot...');
+        const presignRes = await fetch('/api/uploads/presign', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name, contentType: file.type || 'video/mp4', contentLength: file.size })
+        })
+        if (!presignRes.ok) throw new Error('Failed to presign upload')
+        const { url, fields, videoId, key } = await presignRes.json()
+
+        // Build FormData per S3 POST policy
+        const form = new FormData()
+        Object.entries(fields).forEach(([k, v]) => form.append(k, String(v)))
+        form.append('file', file)
+
+        setUploadProgress('Uploading to storage...')
+
+        // Use XMLHttpRequest for progress tracking and better error handling
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          const startTime = Date.now();
+
+          // Track upload progress
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              const uploadedMB = Math.round(e.loaded / 1024 / 1024);
+              const totalMB = Math.round(e.total / 1024 / 1024);
+
+              // Calculate upload speed
+              const elapsed = (Date.now() - startTime) / 1000; // seconds
+              const speedMBps = (e.loaded / 1024 / 1024) / elapsed;
+              const remainingBytes = e.total - e.loaded;
+              const remainingTime = remainingBytes / (e.loaded / elapsed);
+
+              setProgressPercent(percent);
+              setUploadProgress(`${uploadedMB} MB / ${totalMB} MB (${percent}%)`);
+              setUploadSpeed(`${speedMBps.toFixed(1)} MB/s - ${Math.round(remainingTime / 60)} min remaining`);
+            }
+          });
+
+          // Handle completion
+          xhr.addEventListener('load', () => {
+            if (xhr.status === 204 || xhr.status === 201) {
+              setUploadProgress('Upload completed');
+              setProgressPercent(100);
+              resolve();
+            } else {
+              reject(new Error(`Storage upload failed (status ${xhr.status}): ${xhr.responseText}`));
+            }
+          });
+
+          // Handle errors
+          xhr.addEventListener('error', () => {
+            reject(new Error('Upload failed - check CORS configuration and network connection'));
+          });
+
+          xhr.addEventListener('timeout', () => {
+            reject(new Error('Upload timed out'));
+          });
+
+          // Start upload
+          xhr.open('POST', url);
+          xhr.timeout = 300000; // 5 minute timeout
+          xhr.send(form);
+        });
+
+        // Register metadata
+        setUploadProgress('Finalizing...')
+        const register = await fetch('/api/video/register', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoId,
+            clientName,
+            projectName,
+            filename: file.name,
+            fileSize: file.size,
+            key
+          })
+        })
+        const regData = await register.json()
+        if (!register.ok || !regData.success) {
+          setError(regData.error || 'Failed to register metadata')
+          setUploading(false)
+          return
+        }
+        setResult({ videoId, metadata: regData.metadata })
+        setUploading(false)
+        setFile(null)
+        setClientName('')
+        setProjectName('')
+        return
+      }
+
+      // Use streaming upload for files larger than 1GB
+      const useStreaming = file.size > 1024 * 1024 * 1024; // 1GB threshold
+      
+      if (useStreaming) {
+        console.log('Using streaming upload for large file');
+        setUploadProgress('Preparing upload...');
+        
+        // Use XMLHttpRequest for progress tracking
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          const startTime = Date.now();
+          
+          // Track upload progress
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              const uploadedMB = Math.round(e.loaded / 1024 / 1024);
+              const totalMB = Math.round(e.total / 1024 / 1024);
+              
+              // Calculate upload speed
+              const elapsed = (Date.now() - startTime) / 1000; // seconds
+              const speedMBps = (e.loaded / 1024 / 1024) / elapsed;
+              const remainingBytes = e.total - e.loaded;
+              const remainingTime = remainingBytes / (e.loaded / elapsed);
+              
+              setProgressPercent(percent);
+              setUploadProgress(`${uploadedMB} MB / ${totalMB} MB (${percent}%)`);
+              setUploadSpeed(`${speedMBps.toFixed(1)} MB/s - ${Math.round(remainingTime / 60)} min remaining`);
+            }
+          });
+          
+          // Handle completion
+          xhr.addEventListener('load', () => {
+            if (xhr.status === 200) {
+              setUploadProgress('Processing...');
+              setProgressPercent(100);
+              try {
+                const data = JSON.parse(xhr.responseText);
+                if (data.success) {
+                  setResult(data);
+                  setFile(null);
+                  setClientName('');
+                  setProjectName('');
+                  resolve();
+                } else {
+                  setError(data.error || 'Upload failed');
+                  reject(new Error(data.error || 'Upload failed'));
+                }
+              } catch (e) {
+                setError('Failed to parse response');
+                reject(e);
+              }
+            } else {
+              setError(`Upload failed with status ${xhr.status}`);
+              reject(new Error(`HTTP ${xhr.status}`));
+            }
+          });
+          
+          // Handle errors
+          xhr.addEventListener('error', () => {
+            setError('Network error during upload');
+            reject(new Error('Network error'));
+          });
+          
+          xhr.addEventListener('abort', () => {
+            setError('Upload was cancelled');
+            reject(new Error('Upload cancelled'));
+          });
+          
+          // Choose API endpoint based on compression settings
+          const apiEndpoint = enableCompression ? '/api/upload-with-compression' : '/api/upload-stream';
+          
+          // Start the upload
+          xhr.open('POST', apiEndpoint);
+          xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+          xhr.setRequestHeader('X-Filename', file.name);
+          xhr.setRequestHeader('X-Client-Name', clientName);
+          xhr.setRequestHeader('X-Project-Name', projectName);
+          
+          if (enableCompression) {
+            xhr.setRequestHeader('X-Enable-Compression', 'true');
+            xhr.setRequestHeader('X-Compression-Quality', compressionQuality);
+          }
+          
+          xhr.send(file);
+        });
+      } else {
+        console.log('Using regular upload for small file');
+        
+        // Regular form upload for smaller files
+        const formData = new FormData();
+        formData.append('video', file);
+        formData.append('clientName', clientName);
+        formData.append('projectName', projectName);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000); // 10 minute timeout
+
+        const response = await fetch('/api/upload-cloud', {
+          method: 'POST',
+          body: formData,
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        const data = await response.json();
+
+        if (data.success) {
+          setResult(data);
+          setFile(null);
+          setClientName('');
+          setProjectName('');
+        } else {
+          setError(data.error || 'Upload failed');
+        }
+      }
+    } catch (err) {
+      setError('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
+      <h1>Video Upload</h1>
+      
+      {diskSpace && (
+        <div style={{ 
+          backgroundColor: diskSpace.warning ? '#fff3cd' : '#d1ecf1', 
+          color: diskSpace.warning ? '#856404' : '#0c5460',
+          padding: '10px', 
+          borderRadius: '4px',
+          marginBottom: '20px',
+          fontSize: '14px'
+        }}>
+          <strong>Disk Space:</strong> {diskSpace.diskSpace.available} available 
+          ({diskSpace.diskSpace.percentUsed}% used)
+          {diskSpace.warning && (
+            <div style={{ marginTop: '5px', fontWeight: 'bold' }}>
+              ⚠️ {diskSpace.warning}
+            </div>
+          )}
+        </div>
+      )}
+      <div style={{ marginBottom: '8px', fontSize: '12px', color: '#666' }}>
+        Mode: {uploadMode === 's3' ? `Direct-to-Cloud (${s3Endpoint.includes('backblazeb2.com') ? 'Backblaze B2' : 'S3-compatible'})` : 'Server Upload'}
+      </div>
+
+      <form onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
+        <div style={{ marginBottom: '15px' }}>
+          <label htmlFor="clientName" style={{ display: 'block', marginBottom: '5px' }}>
+            Client Name:
+          </label>
+          <input
+            type="text"
+            id="clientName"
+            value={clientName}
+            onChange={(e) => setClientName(e.target.value)}
+            style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+            required
+          />
+        </div>
+
+        <div style={{ marginBottom: '15px' }}>
+          <label htmlFor="projectName" style={{ display: 'block', marginBottom: '5px' }}>
+            Project Name:
+          </label>
+          <input
+            type="text"
+            id="projectName"
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+            required
+          />
+        </div>
+
+        <div style={{ marginBottom: '15px' }}>
+          <label htmlFor="video" style={{ display: 'block', marginBottom: '5px' }}>
+            Video File:
+          </label>
+          <input
+            type="file"
+            id="video"
+            accept="video/*"
+            onChange={(e) => setFile(e.target.files?.[0] || null)}
+            style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+            required
+          />
+          {file && (
+            <div style={{ marginTop: '5px', fontSize: '12px', color: '#666' }}>
+              Selected: {file.name} ({
+                file.size > 1024 * 1024 * 1024 
+                  ? `${Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100} GB`
+                  : `${Math.round(file.size / 1024 / 1024 * 100) / 100} MB`
+              })
+            </div>
+          )}
+        </div>
+
+        {/* Video Compression Options */}
+        {ffmpegAvailable && file && (
+          <div style={{ 
+            marginBottom: '15px', 
+            padding: '15px', 
+            backgroundColor: '#f8f9fa', 
+            borderRadius: '4px',
+            border: '1px solid #dee2e6'
+          }}>
+            <h4 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Video Compression (Optional)</h4>
+            
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={enableCompression}
+                  onChange={(e) => setEnableCompression(e.target.checked)}
+                  style={{ marginRight: '8px' }}
+                />
+                <span>Compress video to reduce file size (recommended for large files)</span>
+              </label>
+            </div>
+
+            {enableCompression && (
+              <div>
+                <label htmlFor="compressionQuality" style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
+                  Compression Quality:
+                </label>
+                <select
+                  id="compressionQuality"
+                  value={compressionQuality}
+                  onChange={(e) => setCompressionQuality(e.target.value as 'professional' | 'high' | 'medium' | 'web')}
+                  style={{ 
+                    width: '100%', 
+                    padding: '6px', 
+                    border: '1px solid #ccc', 
+                    borderRadius: '4px',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="professional">🏆 Professional (CRF 14) - Visually lossless, master quality</option>
+                  <option value="high">⭐ High Quality (CRF 18) - Near-lossless, client delivery</option>
+                  <option value="medium">📱 Standard (CRF 22) - Excellent quality, balanced size</option>
+                  <option value="web">🌐 Web Optimized (CRF 26) - High quality, fast streaming</option>
+                </select>
+                
+                <div style={{ marginTop: '8px', fontSize: '12px', color: '#666' }}>
+                  💡 Your {Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100} GB file could become{' '}
+                  {compressionQuality === 'professional' && '12-16 GB (30-40% smaller)'}
+                  {compressionQuality === 'high' && '8-12 GB (40-60% smaller)'}
+                  {compressionQuality === 'medium' && '5-8 GB (60-75% smaller)'}
+                  {compressionQuality === 'web' && '3-5 GB (75-85% smaller)'}
+                  {' '}after compression
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {!ffmpegAvailable && file && file.size > 1024 * 1024 * 1024 && (
+          <div style={{ 
+            marginBottom: '15px', 
+            padding: '10px', 
+            backgroundColor: '#fff3cd', 
+            color: '#856404',
+            borderRadius: '4px',
+            fontSize: '14px'
+          }}>
+            💡 <strong>Tip:</strong> Install FFmpeg to enable video compression and reduce your {Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100} GB file size by 60-80%
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={uploading}
+          style={{
+            backgroundColor: uploading ? '#ccc' : '#007bff',
+            color: 'white',
+            padding: '10px 20px',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: uploading ? 'not-allowed' : 'pointer'
+          }}
+        >
+          {uploading ? (uploadProgress || 'Uploading...') : 'Upload Video'}
+        </button>
+        
+        {uploading && (
+          <div style={{ marginTop: '15px' }}>
+            {/* Progress Bar */}
+            <div style={{ 
+              width: '100%', 
+              backgroundColor: '#e0e0e0', 
+              borderRadius: '4px', 
+              overflow: 'hidden',
+              marginBottom: '10px'
+            }}>
+              <div style={{
+                width: `${progressPercent}%`,
+                height: '20px',
+                backgroundColor: progressPercent === 100 ? '#28a745' : '#007bff',
+                transition: 'width 0.3s ease',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: 'white',
+                fontSize: '12px',
+                fontWeight: 'bold'
+              }}>
+                {progressPercent > 0 && `${progressPercent}%`}
+              </div>
+            </div>
+            
+            {/* Progress Text */}
+            <div style={{ fontSize: '14px', color: '#666', marginBottom: '5px' }}>
+              <strong>Status:</strong> {uploadProgress || 'Starting...'}
+            </div>
+            
+            {/* Upload Speed */}
+            {uploadSpeed && (
+              <div style={{ fontSize: '12px', color: '#888' }}>
+                <strong>Speed:</strong> {uploadSpeed}
+              </div>
+            )}
+            
+            {/* Large file info */}
+            {file && file.size > 1024 * 1024 * 1024 && (
+              <div style={{ marginTop: '10px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
+                Large file detected: Using streaming upload for better performance.
+              </div>
+            )}
+          </div>
+        )}
+      </form>
+
+      {error && (
+        <div style={{ 
+          backgroundColor: '#f8d7da', 
+          color: '#721c24', 
+          padding: '10px', 
+          borderRadius: '4px',
+          marginBottom: '20px'
+        }}>
+          Error: {error}
+        </div>
+      )}
+
+      {result && (
+        <div style={{ 
+          backgroundColor: '#d4edda', 
+          color: '#155724', 
+          padding: '15px', 
+          borderRadius: '4px' 
+        }}>
+          <h3>Upload Successful!</h3>
+          <p><strong>Video ID:</strong> {result.videoId}</p>
+          <p><strong>Client:</strong> {result.metadata.clientName}</p>
+          <p><strong>Project:</strong> {result.metadata.projectName}</p>
+          <p><strong>File Size:</strong> {
+            result.metadata.fileSize > 1024 * 1024 * 1024 
+              ? `${Math.round(result.metadata.fileSize / 1024 / 1024 / 1024 * 100) / 100} GB`
+              : `${Math.round(result.metadata.fileSize / 1024 / 1024 * 100) / 100} MB`
+          }</p>
+          {result.compression?.enabled && (
+            <p><strong>Compression:</strong> {result.compression.compressionRatio.toFixed(1)}% size reduction 
+            ({Math.round(result.compression.originalSize / 1024 / 1024 / 1024 * 100) / 100} GB → {Math.round(result.compression.compressedSize / 1024 / 1024 / 1024 * 100) / 100} GB)</p>
+          )}
+          <p><strong>Status:</strong> {result.metadata.status}</p>
+          <p><strong>Download Link:</strong></p>
+          <a 
+            href={`/api/download/${result.videoId}`}
+            style={{ color: '#007bff', textDecoration: 'underline' }}
+          >
+            {window.location.origin}/api/download/{result.videoId}
+          </a>
+        </div>
+      )}
+    </div>
+  );
+}
