@@ -82,7 +82,7 @@ export async function GET() {
       // Extract video IDs from file paths using various patterns
       const allVideoIds = new Set<string>()
 
-      videoFiles.forEach(file => {
+      allVideoFiles.forEach(file => {
         const key = file.Key || ''
         const pathParts = key.split('/')
 
@@ -187,7 +187,7 @@ export async function GET() {
 
       // For each discovered video ID, check if we have metadata or create basic metadata
       const allVideos = []
-      for (const videoId of allVideoIds) {
+      for (const videoId of Array.from(allVideoIds)) {
         // Check if we already have metadata for this video
         let existingVideo = existingVideos.find(v => v.id === videoId)
 
