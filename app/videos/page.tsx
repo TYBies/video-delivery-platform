@@ -96,7 +96,7 @@ export default function VideosPage() {
     <main style={{ maxWidth: '900px', margin: '0 auto', padding: '20px' }}>
       <h1>Videos</h1>
 
-      <div style={{ display: 'flex', gap: '10px', margin: '15px 0' }}>
+      <div className="nav-buttons" style={{ display: 'flex', gap: '10px', margin: '15px 0' }}>
         <a href="/upload" style={{ padding: '8px 12px', background: '#007bff', color: 'white', borderRadius: 4, textDecoration: 'none' }}>Upload</a>
         <button onClick={loadVideos} disabled={loading} style={{ padding: '8px 12px' }}>{loading ? 'Refreshing...' : 'Refresh'}</button>
         <button onClick={runStartup} disabled={running} style={{ padding: '8px 12px' }}>{running ? 'Working...' : 'Run Startup Tasks'}</button>
@@ -120,12 +120,12 @@ export default function VideosPage() {
 
       <div>
         {videos.map(v => (
-          <div key={v.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #eee' }}>
+          <div key={v.id} className="video-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #eee' }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600 }}>{v.filename}</div>
-              <div style={{ fontSize: 13, color: '#666' }}>{v.clientName} • {v.projectName} • {fmtSize(v.fileSize)} • {new Date(v.uploadDate).toLocaleString()} • {v.status}</div>
+              <div className="video-info" style={{ fontSize: 13, color: '#666' }}>{v.clientName} • {v.projectName} • {fmtSize(v.fileSize)} • {new Date(v.uploadDate).toLocaleString()} • {v.status}</div>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div className="video-actions" style={{ display: 'flex', gap: '8px' }}>
               <a href={`/api/download/${v.id}`} style={{ padding: '6px 10px', background: '#17a2b8', color: 'white', borderRadius: 4, textDecoration: 'none' }}>Download</a>
               <a href={`/api/video/${v.id}`} target="_blank" rel="noreferrer" style={{ padding: '6px 10px', background: '#6c757d', color: 'white', borderRadius: 4, textDecoration: 'none' }}>Details</a>
               <button onClick={() => deleteVideo(v.id)} disabled={busyId === v.id} style={{ padding: '6px 10px', background: '#dc3545', color: 'white', border: 'none', borderRadius: 4 }}>{busyId === v.id ? 'Deleting...' : 'Delete'}</button>

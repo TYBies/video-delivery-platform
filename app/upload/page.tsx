@@ -5,6 +5,8 @@ import { useState, useEffect } from 'react';
 export default function UploadPage() {
   const uploadMode = process.env.NEXT_PUBLIC_UPLOAD_MODE || 'server' // 'server' | 's3'
   const s3Endpoint = process.env.NEXT_PUBLIC_S3_ENDPOINT || ''
+  const MAX_DIRECT_GB = Number(process.env.NEXT_PUBLIC_MAX_DIRECT_GB || '5')
+  const MAX_DIRECT_BYTES = MAX_DIRECT_GB * 1024 * 1024 * 1024
   const [file, setFile] = useState<File | null>(null);
   const [clientName, setClientName] = useState('');
   const [projectName, setProjectName] = useState('');
@@ -66,6 +68,12 @@ export default function UploadPage() {
     setUploadSpeed('');
 
     try {
+      if (uploadMode === 's3' && file && file.size > MAX_DIRECT_BYTES) {
+        const fileSizeGB = Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100;
+        setError(`File is ${fileSizeGB} GB, which exceeds the ${MAX_DIRECT_GB} GB direct upload limit. Please compress locally first (see instructions below).`);
+        setUploading(false);
+        return;
+      }
       if (uploadMode === 's3') {
         // Direct-to-S3 with presigned PUT (Backblaze B2 compatible)
         setUploadProgress('Requesting upload URL...');
@@ -205,237 +213,189 @@ export default function UploadPage() {
   };
 
   return (
-    <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
-      <h1>Video Upload</h1>
-      
-      {diskSpace && (
-        <div style={{ 
-          backgroundColor: diskSpace.warning ? '#fff3cd' : '#d1ecf1', 
-          color: diskSpace.warning ? '#856404' : '#0c5460',
-          padding: '10px', 
-          borderRadius: '4px',
-          marginBottom: '20px',
-          fontSize: '14px'
-        }}>
-          <strong>Disk Space:</strong> {diskSpace.diskSpace.available} available 
-          ({diskSpace.diskSpace.percentUsed}% used)
-          {diskSpace.warning && (
-            <div style={{ marginTop: '5px', fontWeight: 'bold' }}>
-              ⚠️ {diskSpace.warning}
-            </div>
-          )}
-        </div>
-      )}
-      <div style={{ marginBottom: '8px', fontSize: '12px', color: '#666' }}>
-        Mode: {uploadMode === 's3' ? `Direct-to-Cloud (${s3Endpoint.includes('backblazeb2.com') ? 'Backblaze B2' : 'S3-compatible'})` : 'Server Upload'}
-      </div>
-
-      <form onSubmit={handleSubmit} style={{ marginBottom: '20px' }}>
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="clientName" style={{ display: 'block', marginBottom: '5px' }}>
-            Client Name:
-          </label>
-          <input
-            type="text"
-            id="clientName"
-            value={clientName}
-            onChange={(e) => setClientName(e.target.value)}
-            style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-            required
-          />
+    <main>
+      <div className="card">
+        <h2>Video Upload</h2>
+        
+        {diskSpace && (
+          <div className={`alert ${diskSpace.warning ? 'alert-warning' : 'alert-info'}`}>
+            <strong>Disk Space:</strong> {diskSpace.diskSpace.available} available 
+            ({diskSpace.diskSpace.percentUsed}% used)
+            {diskSpace.warning && (
+              <div style={{ marginTop: '5px', fontWeight: 'bold' }}>
+                ⚠️ {diskSpace.warning}
+              </div>
+            )}
+          </div>
+        )}
+        <div style={{ marginBottom: '8px', fontSize: '12px', color: '#666' }}>
+          Mode: {uploadMode === 's3' ? `Direct-to-Cloud (${s3Endpoint.includes('backblazeb2.com') ? 'Backblaze B2' : 'S3-compatible'})` : 'Server Upload'}
         </div>
 
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="projectName" style={{ display: 'block', marginBottom: '5px' }}>
-            Project Name:
-          </label>
-          <input
-            type="text"
-            id="projectName"
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-            style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-            required
-          />
-        </div>
+        <form onSubmit={handleSubmit} style={{ marginTop: '20px' }}>
+          <div className="form-group">
+            <label htmlFor="clientName">
+              Client Name:
+            </label>
+            <input
+              type="text"
+              id="clientName"
+              value={clientName}
+              onChange={(e) => setClientName(e.target.value)}
+              className="form-control"
+              required
+            />
+          </div>
 
-        <div style={{ marginBottom: '15px' }}>
-          <label htmlFor="video" style={{ display: 'block', marginBottom: '5px' }}>
-            Video File:
-          </label>
-          <input
-            type="file"
-            id="video"
-            accept="video/*"
-            onChange={(e) => setFile(e.target.files?.[0] || null)}
-            style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-            required
-          />
-          {file && (
-            <div style={{ marginTop: '5px', fontSize: '12px', color: '#666' }}>
-              Selected: {file.name} ({
-                file.size > 1024 * 1024 * 1024 
-                  ? `${Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100} GB`
-                  : `${Math.round(file.size / 1024 / 1024 * 100) / 100} MB`
-              })
-            </div>
-          )}
-        </div>
+          <div className="form-group">
+            <label htmlFor="projectName">
+              Project Name:
+            </label>
+            <input
+              type="text"
+              id="projectName"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              className="form-control"
+              required
+            />
+          </div>
 
-        {/* Video Compression Options */}
-        {ffmpegAvailable && file && (
-          <div style={{ 
-            marginBottom: '15px', 
-            padding: '15px', 
-            backgroundColor: '#f8f9fa', 
-            borderRadius: '4px',
-            border: '1px solid #dee2e6'
-          }}>
-            <h4 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Video Compression (Optional)</h4>
-            
-            <div style={{ marginBottom: '10px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                <input
-                  type="checkbox"
-                  checked={enableCompression}
-                  onChange={(e) => setEnableCompression(e.target.checked)}
-                  style={{ marginRight: '8px' }}
-                />
-                <span>Compress video to reduce file size (recommended for large files)</span>
-              </label>
-            </div>
+          <div className="form-group">
+            <label htmlFor="video">
+              Video File:
+            </label>
+            <input
+              type="file"
+              id="video"
+              accept="video/*"
+              onChange={(e) => setFile(e.target.files?.[0] || null)}
+              className="form-control"
+              required
+            />
+            {file && (
+              <div style={{ marginTop: '5px', fontSize: '12px', color: '#666' }}>
+                Selected: {file.name} ({
+                  file.size > 1024 * 1024 * 1024 
+                    ? `${Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100} GB`
+                    : `${Math.round(file.size / 1024 / 1024 * 100) / 100} MB`
+                })
+              </div>
+            )}
+            {uploadMode === 's3' && file && file.size > MAX_DIRECT_BYTES && (
+              <div className="alert alert-warning" style={{ marginTop: 10 }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>File exceeds {MAX_DIRECT_GB} GB direct upload limit</div>
+                <div>Please compress locally, then upload the compressed file using one of these commands:</div>
+                <pre style={{ whiteSpace: 'pre-wrap', background: '#f8f9fa', padding: 8, borderRadius: 4, marginTop: 8 }}>
+ffmpeg -i "INPUT" -c:v libx264 -crf 22 -preset medium -c:a aac -b:a 192k "OUTPUT.mp4"
+                </pre>
+                <div style={{ marginTop: 6 }}>Tip: Lower CRF (e.g. 18) = higher quality; higher CRF (e.g. 26) = smaller size.</div>
+              </div>
+            )}
+          </div>
 
-            {enableCompression && (
-              <div>
-                <label htmlFor="compressionQuality" style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
-                  Compression Quality:
+          {/* Video Compression Options */}
+          {ffmpegAvailable && file && (
+            <div className="form-group" style={{ 
+              padding: '15px', 
+              backgroundColor: '#f8f9fa', 
+              borderRadius: '8px',
+              border: '1px solid #dee2e6'
+            }}>
+              <h4 style={{ margin: '0 0 10px 0', fontSize: '16px' }}>Video Compression (Optional)</h4>
+              
+              <div style={{ marginBottom: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                  <input
+                    type="checkbox"
+                    checked={enableCompression}
+                    onChange={(e) => setEnableCompression(e.target.checked)}
+                    style={{ marginRight: '8px' }}
+                  />
+                  <span>Compress video to reduce file size (recommended for large files)</span>
                 </label>
-                <select
-                  id="compressionQuality"
-                  value={compressionQuality}
-                  onChange={(e) => setCompressionQuality(e.target.value as 'professional' | 'high' | 'medium' | 'web')}
-                  style={{ 
-                    width: '100%', 
-                    padding: '6px', 
-                    border: '1px solid #ccc', 
-                    borderRadius: '4px',
-                    fontSize: '14px'
-                  }}
-                >
-                  <option value="professional">🏆 Professional (CRF 14) - Visually lossless, master quality</option>
-                  <option value="high">⭐ High Quality (CRF 18) - Near-lossless, client delivery</option>
-                  <option value="medium">📱 Standard (CRF 22) - Excellent quality, balanced size</option>
-                  <option value="web">🌐 Web Optimized (CRF 26) - High quality, fast streaming</option>
-                </select>
-                
-                <div style={{ marginTop: '8px', fontSize: '12px', color: '#666' }}>
-                  💡 Your {Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100} GB file could become{' '}
-                  {compressionQuality === 'professional' && '12-16 GB (30-40% smaller)'}
-                  {compressionQuality === 'high' && '8-12 GB (40-60% smaller)'}
-                  {compressionQuality === 'medium' && '5-8 GB (60-75% smaller)'}
-                  {compressionQuality === 'web' && '3-5 GB (75-85% smaller)'}
-                  {' '}after compression
+              </div>
+
+              {enableCompression && (
+                <div>
+                  <label htmlFor="compressionQuality" style={{ display: 'block', marginBottom: '5px', fontSize: '14px' }}>
+                    Compression Quality:
+                  </label>
+                  <select
+                    id="compressionQuality"
+                    value={compressionQuality}
+                    onChange={(e) => setCompressionQuality(e.target.value as 'professional' | 'high' | 'medium' | 'web')}
+                    className="form-control"
+                  >
+                    <option value="professional">🏆 Professional (CRF 14) - Visually lossless, master quality</option>
+                    <option value="high">⭐ High Quality (CRF 18) - Near-lossless, client delivery</option>
+                    <option value="medium">📱 Standard (CRF 22) - Excellent quality, balanced size</option>
+                    <option value="web">🌐 Web Optimized (CRF 26) - High quality, fast streaming</option>
+                  </select>
+                  
+                  <div style={{ marginTop: '8px', fontSize: '12px', color: '#666' }}>
+                    💡 Your {Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100} GB file could become{' '}
+                    {compressionQuality === 'professional' && '12-16 GB (30-40% smaller)'}
+                    {compressionQuality === 'high' && '8-12 GB (40-60% smaller)'}
+                    {compressionQuality === 'medium' && '5-8 GB (60-75% smaller)'}
+                    {compressionQuality === 'web' && '3-5 GB (75-85% smaller)'}
+                    {' '}after compression
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!ffmpegAvailable && file && file.size > 1024 * 1024 * 1024 && (
+            <div className="alert alert-warning">
+              💡 <strong>Tip:</strong> Install FFmpeg to enable video compression and reduce your {Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100} GB file size by 60-80%
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={uploading || (uploadMode === 's3' && !!file && file.size > MAX_DIRECT_BYTES)}
+            className="btn"
+          >
+            {uploading ? (uploadProgress || 'Uploading...') : 'Upload Video'}
+          </button>
+          
+          {uploading && (
+            <div style={{ marginTop: '15px' }}>
+              <div className="progress-bar">
+                <div className="progress-bar-inner" style={{ width: `${progressPercent}%` }}>
+                  {progressPercent > 0 && `${progressPercent}%`}
                 </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {!ffmpegAvailable && file && file.size > 1024 * 1024 * 1024 && (
-          <div style={{ 
-            marginBottom: '15px', 
-            padding: '10px', 
-            backgroundColor: '#fff3cd', 
-            color: '#856404',
-            borderRadius: '4px',
-            fontSize: '14px'
-          }}>
-            💡 <strong>Tip:</strong> Install FFmpeg to enable video compression and reduce your {Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100} GB file size by 60-80%
-          </div>
-        )}
-
-        <button
-          type="submit"
-          disabled={uploading}
-          style={{
-            backgroundColor: uploading ? '#ccc' : '#007bff',
-            color: 'white',
-            padding: '10px 20px',
-            border: 'none',
-            borderRadius: '4px',
-            cursor: uploading ? 'not-allowed' : 'pointer'
-          }}
-        >
-          {uploading ? (uploadProgress || 'Uploading...') : 'Upload Video'}
-        </button>
-        
-        {uploading && (
-          <div style={{ marginTop: '15px' }}>
-            {/* Progress Bar */}
-            <div style={{ 
-              width: '100%', 
-              backgroundColor: '#e0e0e0', 
-              borderRadius: '4px', 
-              overflow: 'hidden',
-              marginBottom: '10px'
-            }}>
-              <div style={{
-                width: `${progressPercent}%`,
-                height: '20px',
-                backgroundColor: progressPercent === 100 ? '#28a745' : '#007bff',
-                transition: 'width 0.3s ease',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: 'white',
-                fontSize: '12px',
-                fontWeight: 'bold'
-              }}>
-                {progressPercent > 0 && `${progressPercent}%`}
+              
+              <div style={{ fontSize: '14px', color: '#666', marginBottom: '5px' }}>
+                <strong>Status:</strong> {uploadProgress || 'Starting...'}
               </div>
+              
+              {uploadSpeed && (
+                <div style={{ fontSize: '12px', color: '#888' }}>
+                  <strong>Speed:</strong> {uploadSpeed}
+                </div>
+              )}
+              
+              {file && file.size > 1024 * 1024 * 1024 && (
+                <div style={{ marginTop: '10px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
+                  Large file detected: Using streaming upload for better performance.
+                </div>
+              )}
             </div>
-            
-            {/* Progress Text */}
-            <div style={{ fontSize: '14px', color: '#666', marginBottom: '5px' }}>
-              <strong>Status:</strong> {uploadProgress || 'Starting...'}
-            </div>
-            
-            {/* Upload Speed */}
-            {uploadSpeed && (
-              <div style={{ fontSize: '12px', color: '#888' }}>
-                <strong>Speed:</strong> {uploadSpeed}
-              </div>
-            )}
-            
-            {/* Large file info */}
-            {file && file.size > 1024 * 1024 * 1024 && (
-              <div style={{ marginTop: '10px', fontSize: '12px', color: '#666', fontStyle: 'italic' }}>
-                Large file detected: Using streaming upload for better performance.
-              </div>
-            )}
-          </div>
-        )}
-      </form>
+          )}
+        </form>
+      </div>
 
       {error && (
-        <div style={{ 
-          backgroundColor: '#f8d7da', 
-          color: '#721c24', 
-          padding: '10px', 
-          borderRadius: '4px',
-          marginBottom: '20px'
-        }}>
+        <div className="alert alert-danger">
           Error: {error}
         </div>
       )}
 
       {result && (
-        <div style={{ 
-          backgroundColor: '#d4edda', 
-          color: '#155724', 
-          padding: '15px', 
-          borderRadius: '4px' 
-        }}>
+        <div className="alert alert-success">
           <h3>Upload Successful!</h3>
           <p><strong>Video ID:</strong> {result.videoId}</p>
           <p><strong>Client:</strong> {result.metadata.clientName}</p>
@@ -453,12 +413,11 @@ export default function UploadPage() {
           <p><strong>Download Link:</strong></p>
           <a 
             href={`/api/download/${result.videoId}`}
-            style={{ color: '#007bff', textDecoration: 'underline' }}
           >
             {window.location.origin}/api/download/{result.videoId}
           </a>
         </div>
       )}
-    </div>
+    </main>
   );
 }

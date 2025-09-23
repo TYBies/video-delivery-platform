@@ -1,52 +1,34 @@
 export default function Home() {
   return (
-    <main style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
-      <h1>Videographer Platform</h1>
-      <p>Welcome to your video delivery platform</p>
-      
-      <div style={{ marginTop: '30px' }}>
-        <h2>Quick Actions</h2>
-        <ul style={{ listStyle: 'none', padding: 0 }}>
-          <li style={{ marginBottom: '10px' }}>
-            <a 
-              href="/upload" 
-              style={{ 
-                display: 'inline-block',
-                backgroundColor: '#007bff', 
-                color: 'white', 
-                padding: '10px 20px', 
-                textDecoration: 'none', 
-                borderRadius: '4px' 
-              }}
-            >
-              Upload Video
+    <main>
+      <div className="card">
+        <h2>Welcome to Your Video Delivery Platform</h2>
+        <p>This is your central hub for managing and sharing video content with your clients.</p>
+      </div>
+
+      <div className="card">
+        <h3>Quick Actions</h3>
+        <ul className="nav-buttons" style={{ listStyle: 'none', padding: 0, display: 'flex', gap: '10px' }}>
+          <li>
+            <a href="/upload" className="btn">
+              Upload a New Video
             </a>
           </li>
           <li>
-            <a 
-              href="/videos" 
-              style={{ 
-                display: 'inline-block',
-                backgroundColor: '#17a2b8', 
-                color: 'white', 
-                padding: '10px 20px', 
-                textDecoration: 'none', 
-                borderRadius: '4px' 
-              }}
-            >
-              Manage Videos
+            <a href="/videos" className="btn btn-secondary">
+              Manage Existing Videos
             </a>
           </li>
         </ul>
       </div>
       
-      <div style={{ marginTop: '30px', fontSize: '14px', color: '#666' }}>
-        <h3>Features</h3>
-        <ul>
-          <li>✅ Local storage with automatic R2 backup</li>
-          <li>✅ Secure download links for clients</li>
-          <li>✅ Support for MP4, MOV, AVI, MKV, WebM formats</li>
-          <li>✅ Automatic failover to cloud storage</li>
+      <div className="card">
+        <h3>Platform Features</h3>
+        <ul style={{ listStyle: 'none', padding: 0, color: '#666' }}>
+          <li style={{ marginBottom: '10px' }}>✅  <strong>Hybrid Storage:</strong> Automatic failover from local to cloud (R2) storage.</li>
+          <li style={{ marginBottom: '10px' }}>✅  <strong>Secure Links:</strong> Generate secure, shareable download links for your clients.</li>
+          <li style={{ marginBottom: '10px' }}>✅  <strong>Broad Format Support:</strong> MP4, MOV, AVI, MKV, and WebM formats are supported.</li>
+          <li style={{ marginBottom: '10px' }}>✅  <strong>Large File Handling:</strong> Optimized for large file uploads with progress tracking.</li>
         </ul>
       </div>
     </main>

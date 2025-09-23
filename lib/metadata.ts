@@ -241,8 +241,11 @@ export class MetadataManager {
       const indexData = await fs.readFile(this.indexPath, 'utf-8');
       index = JSON.parse(indexData);
     } catch (error) {
-      // Index doesn't exist, create new one
-      await fs.mkdir(path.dirname(this.indexPath), { recursive: true });
+      // Ensure index directory exists
+      try {
+        await fs.mkdir(this.storagePath, { recursive: true });
+        await fs.mkdir(path.join(this.storagePath, 'metadata'), { recursive: true });
+      } catch {}
     }
 
     // Remove existing entry if it exists
@@ -254,6 +257,10 @@ export class MetadataManager {
     // Sort by upload date (newest first)
     index.videos.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
 
+    // Ensure directory still exists before writing
+    try {
+      await fs.mkdir(path.join(this.storagePath, 'metadata'), { recursive: true });
+    } catch {}
     await fs.writeFile(this.indexPath, JSON.stringify(index, null, 2));
   }
 
