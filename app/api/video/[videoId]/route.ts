@@ -57,23 +57,84 @@ export async function DELETE(
     if (isS3Enabled()) {
       const cfg = loadS3Config()
       const client = new S3Client({ region: cfg.region, endpoint: cfg.endpoint, credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey } })
+
+      // First, get the metadata to find the actual file path
+      let videoFileKey = null;
       const metaKey = `videos/${videoId}/metadata.json`
-      // Try deleting common extensions; ignore errors
-      const exts = ['.mp4', '.mov', '.avi', '.mkv', '.webm']
-      for (const ext of exts) {
-        try { await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: `videos/${videoId}/video${ext}` })) } catch {}
+
+      try {
+        const metaRes = await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: metaKey }))
+        const metaText = await (metaRes.Body as any).transformToString()
+        const metadata = JSON.parse(metaText)
+
+        // Use the r2Path from metadata if available, otherwise construct likely path
+        if (metadata.r2Path) {
+          videoFileKey = metadata.r2Path
+          console.log(`Found video file path from metadata: ${videoFileKey}`)
+        } else {
+          // Fallback: construct path using original filename
+          videoFileKey = `videos/${videoId}/${metadata.filename || 'video.mov'}`
+          console.log(`Constructed video file path: ${videoFileKey}`)
+        }
+      } catch (metaError) {
+        console.error(`Could not load metadata for ${videoId}:`, metaError)
+        // If metadata doesn't exist, try to find the file by scanning
+        // This handles cases where metadata might be missing but file exists
+        const exts = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v']
+        for (const ext of exts) {
+          const testKey = `videos/${videoId}/video${ext}`
+          try {
+            await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: testKey }))
+            videoFileKey = testKey
+            console.log(`Found video file by scanning: ${videoFileKey}`)
+            break
+          } catch {}
+        }
       }
-      try { await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: metaKey })) } catch {}
-      // Update index
+
+      // Delete the actual video file if we found it
+      if (videoFileKey) {
+        try {
+          await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: videoFileKey }))
+          console.log(`Successfully deleted video file: ${videoFileKey}`)
+        } catch (deleteError) {
+          console.error(`Failed to delete video file ${videoFileKey}:`, deleteError)
+          return NextResponse.json({ error: `Failed to delete video file: ${deleteError.message}` }, { status: 500 });
+        }
+      } else {
+        console.warn(`No video file found for ${videoId}`)
+      }
+
+      // Delete the metadata file
+      try {
+        await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: metaKey }))
+        console.log(`Successfully deleted metadata: ${metaKey}`)
+      } catch (metaDeleteError) {
+        console.error(`Failed to delete metadata ${metaKey}:`, metaDeleteError)
+      }
+
+      // Update index - remove video from the index
       try {
         const idxKey = 'metadata/videos-index.json'
         const res = await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: idxKey }))
         const text = await (res.Body as any).transformToString()
         const idx = JSON.parse(text)
+        const originalCount = idx.videos ? idx.videos.length : 0
         idx.videos = (idx.videos || []).filter((v: any) => v.id !== videoId)
+        const newCount = idx.videos.length
+
         await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: idxKey }))
-        await client.send(new PutObjectCommand({ Bucket: cfg.bucket, Key: idxKey, Body: JSON.stringify(idx, null, 2), ContentType: 'application/json' }))
-      } catch {}
+        await client.send(new PutObjectCommand({
+          Bucket: cfg.bucket,
+          Key: idxKey,
+          Body: JSON.stringify(idx, null, 2),
+          ContentType: 'application/json'
+        }))
+        console.log(`Updated index: removed ${originalCount - newCount} video(s)`)
+      } catch (indexError) {
+        console.error(`Failed to update index:`, indexError)
+      }
+
       return NextResponse.json({ message: `Video ${videoId} deleted successfully` })
     } else {
       const hybridStorage = new HybridStorage();
