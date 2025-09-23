@@ -1,8 +1,16 @@
 
 import { HybridStorage } from '@/lib/hybrid-storage';
+import { metadataCache } from '@/lib/metadata-cache';
+import { handleS3Error } from '@/lib/s3-config';
 import { MetadataManager } from '@/lib/metadata';
 import { isS3Enabled, loadS3Config } from '@/lib/s3-config'
-import { S3Client, GetObjectCommand, DeleteObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3'
+import {
+  S3Client,
+  GetObjectCommand,
+  DeleteObjectsCommand,
+  ListObjectsV2Command,
+  PutObjectCommand,
+} from '@aws-sdk/client-s3'
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(
@@ -92,28 +100,82 @@ export async function DELETE(
         }
       }
 
-      // Delete the actual video file if we found it
-      if (videoFileKey) {
-        try {
-          await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: videoFileKey }))
-          console.log(`Successfully deleted video file: ${videoFileKey}`)
-        } catch (deleteError) {
-          console.error(`Failed to delete video file ${videoFileKey}:`, deleteError)
-          return NextResponse.json({ error: `Failed to delete video file: ${deleteError.message}` }, { status: 500 });
+      // First, verify that objects actually exist before attempting deletion
+      const keysToDelete = new Set<string>()
+      const videoPrefix = `videos/${videoId}/`
+
+      try {
+        const listedObjects = await client.send(new ListObjectsV2Command({
+          Bucket: cfg.bucket,
+          Prefix: videoPrefix,
+        }))
+
+        // Only add keys that actually exist in the bucket
+        if (listedObjects.Contents && listedObjects.Contents.length > 0) {
+          listedObjects.Contents.forEach(obj => {
+            if (obj.Key) {
+              keysToDelete.add(obj.Key)
+            }
+          })
         }
-      } else {
-        console.warn(`No video file found for ${videoId}`)
+      } catch (listError) {
+        console.error(`Failed to list objects for prefix ${videoPrefix}:`, listError)
+        return NextResponse.json({
+          success: false,
+          error: `Failed to check if video exists in cloud storage`,
+          details: listError instanceof Error ? listError.message : String(listError),
+        }, { status: 500 })
       }
 
-      // Delete the metadata file
-      try {
-        await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: metaKey }))
-        console.log(`Successfully deleted metadata: ${metaKey}`)
-      } catch (metaDeleteError) {
-        console.error(`Failed to delete metadata ${metaKey}:`, metaDeleteError)
+      // If no objects found, video doesn't exist
+      if (keysToDelete.size === 0) {
+        console.warn(`❌ No objects found for video ${videoId} - video does not exist`)
+        return NextResponse.json({
+          success: false,
+          error: `Video ${videoId} not found in cloud storage`,
+        }, { status: 404 })
       }
+
+      // Delete the objects that actually exist
+      const keysArray = Array.from(keysToDelete)
+      const chunkSize = 1000 // S3 DeleteObjects limit
+      let totalDeleted = 0
+
+      for (let i = 0; i < keysArray.length; i += chunkSize) {
+        const chunk = keysArray.slice(i, i + chunkSize)
+        try {
+          const deleteResult = await client.send(new DeleteObjectsCommand({
+            Bucket: cfg.bucket,
+            Delete: {
+              Objects: chunk.map(key => ({ Key: key })),
+              Quiet: false, // Get detailed results
+            },
+          }))
+
+          const deletedCount = deleteResult.Deleted?.length || 0
+          totalDeleted += deletedCount
+          console.log(`✅ Successfully deleted ${deletedCount} object(s) for video ${videoId}: ${chunk.join(', ')}`)
+
+          // Log any errors that occurred during deletion
+          if (deleteResult.Errors && deleteResult.Errors.length > 0) {
+            deleteResult.Errors.forEach(error => {
+              console.error(`❌ Failed to delete ${error.Key}: ${error.Message}`)
+            })
+          }
+        } catch (deleteError) {
+          console.error(`❌ Failed to delete objects ${chunk.join(', ')}:`, deleteError)
+          return NextResponse.json({
+            success: false,
+            error: `Failed to delete video files from cloud storage`,
+            details: deleteError instanceof Error ? deleteError.message : String(deleteError),
+          }, { status: 500 })
+        }
+      }
+
+      console.log(`✅ Successfully deleted ${totalDeleted} object(s) for video ${videoId}`)
 
       // Update index - remove video from the index
+      let indexUpdateFailed = false
       try {
         const idxKey = 'metadata/videos-index.json'
         const res = await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: idxKey }))
@@ -122,28 +184,42 @@ export async function DELETE(
         const originalCount = idx.videos ? idx.videos.length : 0
         idx.videos = (idx.videos || []).filter((v: any) => v.id !== videoId)
         const newCount = idx.videos.length
-
-        await client.send(new DeleteObjectCommand({ Bucket: cfg.bucket, Key: idxKey }))
         await client.send(new PutObjectCommand({
           Bucket: cfg.bucket,
           Key: idxKey,
           Body: JSON.stringify(idx, null, 2),
           ContentType: 'application/json'
         }))
-        console.log(`Updated index: removed ${originalCount - newCount} video(s)`)
+        console.log(`✅ Updated index: removed ${originalCount - newCount} video(s)`)
       } catch (indexError) {
-        console.error(`Failed to update index:`, indexError)
+        console.error(`⚠️ Failed to update video index:`, indexError)
+        indexUpdateFailed = true
       }
 
-      return NextResponse.json({ message: `Video ${videoId} deleted successfully` })
+      // Invalidate cache after successful deletion
+      metadataCache.invalidateVideo(videoId);
+
+      return NextResponse.json({
+        success: true,
+        message: `Video ${videoId} deleted successfully`,
+        warning: indexUpdateFailed ? 'Video files deleted but index update failed' : undefined
+      })
     } else {
+      // Cloud-only mode
       const hybridStorage = new HybridStorage();
       const result = await hybridStorage.deleteVideo(videoId);
 
       if (result.success) {
-        return NextResponse.json({ message: `Video ${videoId} deleted successfully` });
+        return NextResponse.json({
+          success: true,
+          message: `Video ${videoId} deleted successfully from cloud storage`
+        });
       } else {
-        return NextResponse.json({ error: `Failed to delete video ${videoId}` }, { status: 500 });
+        return NextResponse.json({
+          success: false,
+          error: result.error || `Failed to delete video ${videoId}`,
+          details: 'Video may not exist in cloud storage'
+        }, { status: result.error?.includes('not found') ? 404 : 500 });
       }
     }
   } catch (error) {

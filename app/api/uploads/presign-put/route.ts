@@ -5,13 +5,48 @@ import crypto from 'crypto'
 import { getFileExtension } from '@/lib/mime'
 
 export async function POST(req: NextRequest) {
-  if (!isS3Enabled()) return NextResponse.json({ error: 'S3 not configured' }, { status: 400 })
-  const body = await req.json().catch(() => ({}))
-  const filename = String(body.filename || 'video.mp4')
-  const videoId = (crypto as any).randomUUID ? (crypto as any).randomUUID() : Math.random().toString(16).slice(2)
-  const ext = getFileExtension(filename)
-  const key = `videos/${videoId}/video${ext}`
-  const url = presignS3PutUrl(key, 900)
-  return NextResponse.json({ url, key, videoId })
+  try {
+    if (!isS3Enabled()) {
+      console.error('❌ Presigned URL request failed: S3/R2 not configured')
+      return NextResponse.json({
+        success: false,
+        error: 'Cloud storage not configured. Please contact support.'
+      }, { status: 503 })
+    }
+
+    const body = await req.json().catch(() => ({}))
+    const filename = String(body.filename || 'video.mp4')
+
+    if (!filename) {
+      return NextResponse.json({
+        success: false,
+        error: 'Filename is required'
+      }, { status: 400 })
+    }
+
+    const videoId = (crypto as any).randomUUID ? (crypto as any).randomUUID() : Math.random().toString(16).slice(2)
+    const ext = getFileExtension(filename)
+    const key = `videos/${videoId}/video${ext}`
+
+    console.log(`🔗 Generating presigned URL for video ${videoId}: ${key}`)
+    const url = presignS3PutUrl(key, 900) // 15 minutes
+
+    return NextResponse.json({
+      success: true,
+      url,
+      key,
+      videoId,
+      expiresIn: 900,
+      warning: 'Upload must complete within 15 minutes and be registered via /api/video/register'
+    })
+
+  } catch (error) {
+    console.error('❌ Presigned URL generation failed:', error)
+    return NextResponse.json({
+      success: false,
+      error: 'Failed to generate upload URL',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
+  }
 }
 

@@ -36,3 +36,54 @@ export function loadS3Config(): S3EnvConfig {
   const finalRegion = region || guessRegionFromEndpoint(endpoint)
   return { endpoint, bucket, region: finalRegion, accessKeyId, secretAccessKey }
 }
+
+export function handleS3Error(error: any): { message: string; userFriendly: string; isRateLimited: boolean } {
+  const errorMessage = error.message || '';
+  const errorCode = error.Code || error.$metadata?.httpStatusCode;
+
+  if (error.Code === 'AccessDenied' && errorMessage.includes('bandwidth or transaction')) {
+    return {
+      message: 'Daily bandwidth or transaction limit reached',
+      userFriendly: 'Daily cloud storage limit reached. This will reset at midnight GMT. Please try again later or contact support to increase limits.',
+      isRateLimited: true
+    };
+  }
+
+  if (error.Code === 'AccessDenied' && errorMessage.includes('cap exceeded')) {
+    return {
+      message: 'Daily transaction cap exceeded',
+      userFriendly: 'Daily cloud storage transaction limit reached. This will reset at midnight GMT. Please try again later.',
+      isRateLimited: true
+    };
+  }
+
+  if (error.Code === 'AccessDenied' && errorCode === 403) {
+    return {
+      message: 'Access denied to cloud storage',
+      userFriendly: 'Access to cloud storage was denied. This may be due to daily limits or configuration issues. Please try again later.',
+      isRateLimited: true
+    };
+  }
+
+  if (errorCode === 404) {
+    return {
+      message: 'Resource not found in cloud storage',
+      userFriendly: 'The requested file was not found in cloud storage.',
+      isRateLimited: false
+    };
+  }
+
+  if (errorCode >= 500) {
+    return {
+      message: 'Cloud storage server error',
+      userFriendly: 'Cloud storage is experiencing technical difficulties. Please try again in a few minutes.',
+      isRateLimited: false
+    };
+  }
+
+  return {
+    message: errorMessage || 'Unknown cloud storage error',
+    userFriendly: 'Cloud storage is temporarily unavailable. Please try again later.',
+    isRateLimited: false
+  };
+}

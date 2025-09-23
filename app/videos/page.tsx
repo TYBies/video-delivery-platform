@@ -27,11 +27,17 @@ export default function VideosPage() {
     setError('');
     try {
       const res = await fetch('/api/video', { cache: 'no-store' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        if (errorData.rateLimited) {
+          throw new Error(errorData.error || 'Daily limit reached. Please try again later.');
+        }
+        throw new Error(errorData.error || `HTTP ${res.status}`);
+      }
       const data = await res.json();
       setVideos(Array.isArray(data) ? data : []);
     } catch (e: any) {
-      setError(`Failed to load videos: ${e.message || e}`);
+      setError(e.message || 'Failed to load videos');
     } finally {
       setLoading(false);
     }
@@ -56,10 +62,23 @@ export default function VideosPage() {
     setBusyId(id);
     try {
       const res = await fetch(`/api/video/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
+
+      // Always refresh the video list after a delete attempt
       await loadVideos();
+
+      // Show warning if there were issues with index update
+      if (data.warning) {
+        alert(`Video deleted successfully, but: ${data.warning}`);
+      }
     } catch (e: any) {
       alert(`Delete failed: ${e.message || e}`);
+      // Still refresh the list in case the delete partially succeeded
+      await loadVideos();
     } finally {
       setBusyId('');
     }

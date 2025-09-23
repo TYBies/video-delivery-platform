@@ -1,12 +1,31 @@
 
 import { MetadataManager } from '@/lib/metadata';
 import { NextResponse } from 'next/server';
-import { isS3Enabled, loadS3Config } from '@/lib/s3-config'
-import { S3Client, GetObjectCommand, ListObjectsV2Command, HeadObjectCommand } from '@aws-sdk/client-s3'
+import { isS3Enabled, loadS3Config, handleS3Error } from '@/lib/s3-config'
+import { metadataCache, rateLimiter } from '@/lib/metadata-cache'
+import { S3Client, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 
 export async function GET() {
   try {
     if (isS3Enabled()) {
+      // Check cache first to reduce B2 Class B transactions
+      const cachedVideos = metadataCache.getVideoList();
+      if (cachedVideos) {
+        console.log(`Returning ${cachedVideos.length} videos from cache`);
+        return NextResponse.json(cachedVideos);
+      }
+
+      // Check rate limiting to prevent excessive API calls
+      if (!rateLimiter.canMakeRequest('video-list')) {
+        const remaining = rateLimiter.getRemainingRequests('video-list');
+        return NextResponse.json(
+          {
+            error: 'Rate limit exceeded',
+            message: `Please try again later. ${remaining} requests remaining in this minute.`
+          },
+          { status: 429 }
+        );
+      }
       const cfg = loadS3Config()
       const client = new S3Client({ region: cfg.region, endpoint: cfg.endpoint, credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey } })
 
@@ -198,41 +217,37 @@ export async function GET() {
           const videoFile = videoFileMap.get(videoId)
 
           if (videoFile && videoFile.Key) {
-            try {
-              // Get more details about the file
-              const headResult = await client.send(new HeadObjectCommand({
-                Bucket: cfg.bucket,
-                Key: videoFile.Key
-              }))
+            // Extract filename from path
+            const filename = videoFile.Key.split('/').pop() || 'unknown.mov'
 
-              // Extract filename from path
-              const filename = videoFile.Key.split('/').pop() || 'unknown.mov'
-
-              // Create basic metadata for discovered video
-              const basicMetadata = {
-                id: videoId,
-                filename: filename,
-                clientName: 'Unknown Client',
-                projectName: 'Discovered Video',
-                uploadDate: videoFile.LastModified?.toISOString() || new Date().toISOString(),
-                fileSize: videoFile.Size || 0,
-                downloadCount: 0,
-                status: 'cloud-only' as const,
-                r2Path: videoFile.Key,
-                downloadUrl: `/api/download/${videoId}`,
-                isActive: true
-              }
-
-              allVideos.push(basicMetadata)
-              console.log(`Discovered unregistered video: ${videoId} at ${videoFile.Key}`)
-            } catch (error) {
-              console.error(`Error processing video file ${videoFile.Key}:`, error)
+            // Create basic metadata for discovered video using data from ListObjectsV2Command
+            const basicMetadata = {
+              id: videoId,
+              filename: filename,
+              clientName: 'Unknown Client',
+              projectName: 'Discovered Video',
+              uploadDate: videoFile.LastModified?.toISOString() || new Date().toISOString(),
+              fileSize: videoFile.Size || 0,
+              downloadCount: 0,
+              status: 'cloud-only' as const,
+              r2Path: videoFile.Key,
+              downloadUrl: `/api/download/${videoId}`,
+              isActive: true
             }
+
+            allVideos.push(basicMetadata)
+            console.log(`Discovered unregistered video: ${videoId} at ${videoFile.Key}`)
+          } else {
+            console.warn(`No video file found for ID: ${videoId}`)
           }
         }
       }
 
       console.log(`Returning ${allVideos.length} total videos`)
+
+      // Cache the results to reduce future B2 API calls
+      metadataCache.setVideoList(allVideos);
+
       return NextResponse.json(allVideos)
     } else {
       const metadataManager = new MetadataManager();
@@ -241,7 +256,24 @@ export async function GET() {
     }
   } catch (error) {
     console.error('Error fetching videos:', error);
+
+    // Handle S3/B2 specific errors with professional messages
+    if (error && typeof error === 'object' && 'Code' in error) {
+      const { message, userFriendly, isRateLimited } = handleS3Error(error);
+      console.error(`S3 Error: ${message}`);
+
+      return NextResponse.json({
+        error: userFriendly,
+        technical: message,
+        rateLimited: isRateLimited,
+        retryAfter: isRateLimited ? 'midnight GMT' : undefined
+      }, { status: isRateLimited ? 429 : 500 });
+    }
+
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return NextResponse.json({ error: 'Failed to fetch videos', details: errorMessage }, { status: 500 });
+    return NextResponse.json({
+      error: 'Unable to fetch videos at this time. Please try again later.',
+      technical: errorMessage
+    }, { status: 500 });
   }
 }

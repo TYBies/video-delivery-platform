@@ -1,20 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { HybridStorage } from '@/lib/hybrid-storage';
-import { DirectoryManager } from '@/lib/directory';
-import { DiskSpaceManager } from '@/lib/disk-space';
 
 export async function POST(request: NextRequest) {
   console.log('Upload API called');
-  
+
   try {
-    // Initialize storage and directory manager
-    console.log('Initializing storage...');
+    // Initialize cloud-only storage
+    console.log('Initializing cloud storage...');
     const hybridStorage = new HybridStorage();
-    const dirManager = new DirectoryManager();
-    
-    // Ensure directories exist
-    console.log('Creating directories...');
-    await dirManager.initializeDirectories();
 
     // Parse form data
     console.log('Parsing form data...');
@@ -41,7 +34,7 @@ export async function POST(request: NextRequest) {
     // Check file size before processing
     const fileSizeGB = Math.round(file.size / 1024 / 1024 / 1024 * 100) / 100;
     console.log(`File size: ${file.size} bytes (${fileSizeGB} GB)`);
-    
+
     // Limit file size to 25GB for large movie files
     const maxSize = 25 * 1024 * 1024 * 1024; // 25GB
     if (file.size > maxSize) {
@@ -51,39 +44,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check available disk space
-    if (!DiskSpaceManager.hasEnoughSpace(file.size)) {
-      const diskInfo = DiskSpaceManager.getReadableDiskSpace();
-      return NextResponse.json(
-        { 
-          success: false, 
-          error: `Not enough disk space. File size: ${fileSizeGB} GB, Available space: ${diskInfo.available}` 
-        },
-        { status: 507 }
-      );
-    }
-
-    // Log disk space warning if needed
-    const warning = DiskSpaceManager.getDiskSpaceWarning();
-    if (warning) {
-      console.warn(warning);
-    }
-
     // Convert file to buffer
     console.log(`Converting file to buffer...`);
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     console.log(`Buffer created. Size: ${buffer.length} bytes`);
 
-    // Save video using hybrid storage
-    console.log('Saving video...');
+    // Save video directly to cloud storage
+    console.log('Saving video to cloud storage...');
     const metadata = await hybridStorage.saveVideo(
       buffer,
       file.name,
       clientName,
       projectName
     );
-    console.log('Video saved successfully:', metadata.id);
+    console.log('Video saved successfully to cloud:', metadata.id);
 
     return NextResponse.json({
       success: true,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isS3Enabled, loadS3Config } from '@/lib/s3-config'
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3'
 
 function s3(): { client: S3Client; bucket: string } {
   const cfg = loadS3Config()
@@ -38,6 +38,19 @@ export async function POST(req: NextRequest) {
 
   const { client, bucket } = s3()
 
+  // CRITICAL: Verify the video file actually exists in cloud storage before registering
+  try {
+    await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }))
+    console.log(`✅ Verified video file exists in cloud storage: ${key}`)
+  } catch (error) {
+    console.error(`❌ Video file verification failed for ${key}:`, error)
+    return NextResponse.json({
+      success: false,
+      error: 'Video file not found in cloud storage. Upload may have failed.',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 404 })
+  }
+
   const metadata = {
     id: videoId,
     filename,
@@ -52,29 +65,40 @@ export async function POST(req: NextRequest) {
     isActive: true
   }
 
-  // Save per-video metadata
-  const metaKey = `videos/${videoId}/metadata.json`
-  await client.send(new PutObjectCommand({
-    Bucket: bucket,
-    Key: metaKey,
-    Body: JSON.stringify(metadata, null, 2),
-    ContentType: 'application/json'
-  }))
+  try {
+    // Save per-video metadata
+    const metaKey = `videos/${videoId}/metadata.json`
+    await client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: metaKey,
+      Body: JSON.stringify(metadata, null, 2),
+      ContentType: 'application/json'
+    }))
 
-  // Update index
-  const index = await getIndex(client, bucket)
-  index.videos = (index.videos || []).filter((v: any) => v.id !== videoId)
-  index.videos.push(metadata)
-  // Sort by uploadDate desc
-  index.videos.sort((a: any, b: any) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime())
+    // Update index
+    const index = await getIndex(client, bucket)
+    index.videos = (index.videos || []).filter((v: any) => v.id !== videoId)
+    index.videos.push(metadata)
+    // Sort by uploadDate desc
+    index.videos.sort((a: any, b: any) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime())
 
-  await client.send(new PutObjectCommand({
-    Bucket: bucket,
-    Key: 'metadata/videos-index.json',
-    Body: JSON.stringify(index, null, 2),
-    ContentType: 'application/json'
-  }))
+    await client.send(new PutObjectCommand({
+      Bucket: bucket,
+      Key: 'metadata/videos-index.json',
+      Body: JSON.stringify(index, null, 2),
+      ContentType: 'application/json'
+    }))
 
-  return NextResponse.json({ success: true, metadata })
+    console.log(`✅ Successfully registered video ${videoId} in cloud storage`)
+    return NextResponse.json({ success: true, metadata })
+
+  } catch (error) {
+    console.error(`❌ Failed to save metadata for video ${videoId}:`, error)
+    return NextResponse.json({
+      success: false,
+      error: 'Failed to save video metadata to cloud storage',
+      details: error instanceof Error ? error.message : 'Unknown error'
+    }, { status: 500 })
+  }
 }
 

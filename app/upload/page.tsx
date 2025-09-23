@@ -127,14 +127,23 @@ export default function UploadPage() {
               setProgressPercent(100);
               resolve();
             } else {
-              setError(`Storage upload failed (${xhr.status})`);
-              reject(new Error(`HTTP ${xhr.status}`));
+              // More specific error messages for different status codes
+              let errorMsg = `Storage upload failed (${xhr.status})`;
+              if (xhr.status === 403) {
+                errorMsg = 'Upload failed: Cloud storage bandwidth limit exceeded. Please try again later.';
+              } else if (xhr.status === 404) {
+                errorMsg = 'Upload failed: Cloud storage endpoint not found. Please contact support.';
+              } else if (xhr.status >= 500) {
+                errorMsg = 'Upload failed: Cloud storage server error. Please try again.';
+              }
+              setError(errorMsg);
+              reject(new Error(errorMsg));
             }
           });
 
           // Handle errors
           xhr.addEventListener('error', () => {
-            setError('Upload failed - network error');
+            setError('Upload failed: Network connection error. Please check your internet and try again.');
             reject(new Error('Network error'));
           });
 
@@ -160,9 +169,18 @@ export default function UploadPage() {
         })
         const regData = await register.json()
         if (!register.ok || !regData.success) {
-          setError(regData.error || 'Failed to register metadata')
-          setUploading(false)
-          return
+          // Provide clearer error message for registration failures
+          let errorMsg = regData.error || 'Failed to register metadata';
+          if (regData.error && regData.error.includes('Daily cloud storage limit reached')) {
+            errorMsg = regData.error; // Use the professional error message
+          } else if (regData.error && regData.error.includes('not found in cloud storage')) {
+            errorMsg = 'Upload completed but file verification failed. This may be due to daily cloud storage transaction limits. Please try again after midnight GMT.';
+          } else if (register.status === 404) {
+            errorMsg = 'Upload completed but registration failed. The file was uploaded successfully but could not be registered. Please contact support.';
+          }
+          setError(errorMsg);
+          setUploading(false);
+          return;
         }
         setResult({ videoId, metadata: regData.metadata })
         setUploading(false)
@@ -259,7 +277,10 @@ export default function UploadPage() {
           xhr.send(file);
         });
     } catch (err) {
-      setError('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      // Only set error if one hasn't already been set during the upload process
+      if (!error) {
+        setError('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      }
     } finally {
       setUploading(false);
       setUploadProgress('');
