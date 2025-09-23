@@ -3,6 +3,7 @@ import { HybridStorage } from '@/lib/hybrid-storage';
 import { MetadataManager } from '@/lib/metadata';
 import { isS3Enabled, loadS3Config } from '@/lib/s3-config'
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3'
+import { getFileExtension, getVideoContentTypeByExt } from '@/lib/mime'
 
 export async function GET(
   request: NextRequest,
@@ -18,19 +19,35 @@ export async function GET(
       );
     }
 
-    // If S3 mode, stream from S3 (works with private buckets)
+    // If S3 mode, optionally redirect to presigned URL if requested
     if (isS3Enabled()) {
+      const url = new URL(request.url)
+      if (url.searchParams.get('presigned') === '1') {
+        // Redirect to presigned GET to bypass serverless for large files
+        const metadataManager = new MetadataManager();
+        const meta = await metadataManager.loadMetadata(videoId).catch(() => null as any)
+        const ext = getFileExtension(meta?.filename || 'video.mp4')
+        const key = `videos/${videoId}/video${ext}`
+        const { presignS3GetUrl } = await import('@/lib/s3-presign-get')
+        const signed = presignS3GetUrl(key, 900)
+        return NextResponse.redirect(signed, { status: 302 })
+      }
       const cfg = loadS3Config()
       const client = new S3Client({ region: cfg.region, endpoint: cfg.endpoint, credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey } })
 
       const metadataManager = new MetadataManager();
       const meta = await metadataManager.loadMetadata(videoId).catch(() => null as any)
-      const ext = (meta?.filename || 'video.mp4').toLowerCase().match(/\.[^.]+$/)?.[0] || '.mp4'
+      const ext = getFileExtension(meta?.filename || 'video.mp4')
       const key = `videos/${videoId}/video${ext}`
 
-      const s3Obj = await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: key }))
+      let s3Obj
+      try {
+        s3Obj = await client.send(new GetObjectCommand({ Bucket: cfg.bucket, Key: key }))
+      } catch (e) {
+        return NextResponse.json({ error: 'Video not found' }, { status: 404 })
+      }
       const headers = new Headers()
-      const contentType = s3Obj.ContentType || 'application/octet-stream'
+      const contentType = s3Obj.ContentType || getVideoContentTypeByExt(ext)
       const size = s3Obj.ContentLength || 0
       headers.set('Content-Type', contentType)
       if (size) headers.set('Content-Length', String(size))

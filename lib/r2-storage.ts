@@ -10,6 +10,7 @@ import { R2ErrorHandler, RetryHandler } from './r2-errors';
 import { VideoMetadata } from '../types';
 import fs from 'fs/promises';
 import { Readable } from 'stream';
+import { getFileExtension, getVideoContentTypeByExt } from './mime'
 
 export class R2Storage {
   private r2Client: R2Client;
@@ -29,14 +30,14 @@ export class R2Storage {
     metadata: VideoMetadata
   ): Promise<{ success: boolean; r2Path?: string; error?: string }> {
     try {
-      const r2Path = `videos/${videoId}/video${this.getFileExtension(metadata.filename)}`;
+      const r2Path = `videos/${videoId}/video${getFileExtension(metadata.filename)}`;
       
       const uploadResult = await RetryHandler.withRetry(async () => {
         const command = new PutObjectCommand({
           Bucket: this.bucket,
           Key: r2Path,
           Body: fileBuffer,
-          ContentType: this.getContentType(metadata.filename),
+          ContentType: getVideoContentTypeByExt(getFileExtension(metadata.filename)),
           Metadata: {
             'original-filename': metadata.filename,
             'client-name': metadata.clientName,
@@ -166,7 +167,7 @@ export class R2Storage {
               success: true,
               stream: result.Body as Readable,
               contentLength: result.ContentLength,
-              contentType: result.ContentType || this.getContentType(`video${ext}`)
+              contentType: result.ContentType || getVideoContentTypeByExt(ext)
             };
           }
         } catch (error) {
@@ -366,28 +367,4 @@ export class R2Storage {
     }
   }
 
-  /**
-   * Get file extension from filename
-   */
-  private getFileExtension(filename: string): string {
-    const ext = filename.toLowerCase().match(/\.[^.]+$/);
-    return ext ? ext[0] : '.mp4';
-  }
-
-  /**
-   * Get MIME content type for video files
-   */
-  private getContentType(filename: string): string {
-    const ext = this.getFileExtension(filename).toLowerCase();
-    
-    const contentTypes: Record<string, string> = {
-      '.mp4': 'video/mp4',
-      '.mov': 'video/quicktime',
-      '.avi': 'video/x-msvideo',
-      '.mkv': 'video/x-matroska',
-      '.webm': 'video/webm'
-    };
-
-    return contentTypes[ext] || 'video/mp4';
-  }
 }

@@ -28,17 +28,58 @@ export class MetadataManager {
   }
 
   /**
-   * Load video metadata by ID
+   * Load video metadata by ID - checks cloud storage first, then local
    */
   async loadMetadata(videoId: string): Promise<VideoMetadata | null> {
     try {
+      // First try to load from cloud storage if S3 is enabled
+      const { isS3Enabled, loadS3Config } = await import('./s3-config');
+
+      if (isS3Enabled()) {
+        try {
+          const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+          const config = loadS3Config();
+          const client = new S3Client({
+            region: config.region,
+            endpoint: config.endpoint,
+            credentials: {
+              accessKeyId: config.accessKeyId,
+              secretAccessKey: config.secretAccessKey
+            }
+          });
+
+          const key = `videos/${videoId}/metadata.json`;
+          const response = await client.send(new GetObjectCommand({
+            Bucket: config.bucket,
+            Key: key
+          }));
+
+          if (response.Body) {
+            const data = await response.Body.transformToString();
+            const metadata = JSON.parse(data);
+
+            // Convert date string back to Date object
+            if (metadata.uploadDate) {
+              metadata.uploadDate = new Date(metadata.uploadDate);
+            }
+
+            console.log(`✅ Loaded metadata from cloud for video ${videoId}`);
+            return metadata;
+          }
+        } catch (cloudError) {
+          console.log(`Cloud metadata not found for ${videoId}, trying local...`);
+        }
+      }
+
+      // Fallback to local storage
       const metadataFile = path.join(this.storagePath, 'videos', videoId, 'metadata.json');
       const data = await fs.readFile(metadataFile, 'utf-8');
       const metadata = JSON.parse(data);
-      
+
       // Convert date string back to Date object
       metadata.uploadDate = new Date(metadata.uploadDate);
-      
+
+      console.log(`✅ Loaded metadata from local storage for video ${videoId}`);
       return metadata;
     } catch (error) {
       console.error(`Failed to load metadata for video ${videoId}:`, error);

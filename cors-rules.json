@@ -1,0 +1,51 @@
+[
+  {
+    "corsRuleName": "downloadFromAllowedOrigins",
+    "allowedOrigins": [
+      "http://localhost:3001",
+      "https://video-delivery-platform-bv9t.vercel.app"
+    ],
+    "allowedHeaders": ["authorization", "range"],
+    "allowedOperations": [
+      "b2_download_file_by_id",
+      "b2_download_file_by_name"
+    ],
+    "maxAgeSeconds": 3600
+  },
+  {
+    "corsRuleName": "s3DownloadFromAllowedOrigins",
+    "allowedOrigins": [
+      "http://localhost:3001",
+      "https://video-delivery-platform-bv9t.vercel.app"
+    ],
+    "allowedHeaders": ["authorization", "range"],
+    "allowedOperations": [
+      "s3_head",
+      "s3_get"
+    ],
+    "maxAgeSeconds": 3600
+  },
+  {
+    "corsRuleName": "s3UploadFromAllowedOrigins",
+    "allowedOrigins": [
+      "http://localhost:3001",
+      "https://video-delivery-platform-bv9t.vercel.app"
+    ],
+    "allowedHeaders": [
+      "authorization",
+      "content-type",
+      "content-length",
+      "x-amz-date",
+      "x-amz-algorithm",
+      "x-amz-credential",
+      "x-amz-signature",
+      "x-amz-signed-headers",
+      "policy"
+    ],
+    "allowedOperations": [
+      "s3_post",
+      "s3_put"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

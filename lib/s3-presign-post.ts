@@ -30,6 +30,7 @@ export function presignS3Post({ key, contentType, maxSizeBytes, expiresSeconds =
       { 'x-amz-algorithm': 'AWS4-HMAC-SHA256' },
       { 'x-amz-credential': credential },
       { 'x-amz-date': amzDate },
+      { 'success_action_status': '201' },
       ['content-length-range', 0, maxSizeBytes],
       ['starts-with', '$Content-Type', contentType || '']
     ]
@@ -51,7 +52,8 @@ export function presignS3Post({ key, contentType, maxSizeBytes, expiresSeconds =
     'x-amz-algorithm': 'AWS4-HMAC-SHA256',
     'x-amz-credential': credential,
     'x-amz-date': amzDate,
-    Policy: policyBase64,
+    'success_action_status': '201',
+    policy: policyBase64,
     'x-amz-signature': signature
   }
 

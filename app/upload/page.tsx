@@ -67,72 +67,24 @@ export default function UploadPage() {
 
     try {
       if (uploadMode === 's3') {
-        // Direct-to-S3 with presigned POST
-        setUploadProgress('Requesting upload slot...');
-        const presignRes = await fetch('/api/uploads/presign', {
+        // Direct-to-S3 with presigned PUT (Backblaze B2 compatible)
+        setUploadProgress('Requesting upload URL...');
+        const presignRes = await fetch('/api/uploads/presign-put', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename: file.name, contentType: file.type || 'video/mp4', contentLength: file.size })
         })
         if (!presignRes.ok) throw new Error('Failed to presign upload')
-        const { url, fields, videoId, key } = await presignRes.json()
-
-        // Build FormData per S3 POST policy
-        const form = new FormData()
-        Object.entries(fields).forEach(([k, v]) => form.append(k, String(v)))
-        form.append('file', file)
+        const { url, videoId, key } = await presignRes.json()
 
         setUploadProgress('Uploading to storage...')
-
-        // Use XMLHttpRequest for progress tracking and better error handling
-        await new Promise<void>((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          const startTime = Date.now();
-
-          // Track upload progress
-          xhr.upload.addEventListener('progress', (e) => {
-            if (e.lengthComputable) {
-              const percent = Math.round((e.loaded / e.total) * 100);
-              const uploadedMB = Math.round(e.loaded / 1024 / 1024);
-              const totalMB = Math.round(e.total / 1024 / 1024);
-
-              // Calculate upload speed
-              const elapsed = (Date.now() - startTime) / 1000; // seconds
-              const speedMBps = (e.loaded / 1024 / 1024) / elapsed;
-              const remainingBytes = e.total - e.loaded;
-              const remainingTime = remainingBytes / (e.loaded / elapsed);
-
-              setProgressPercent(percent);
-              setUploadProgress(`${uploadedMB} MB / ${totalMB} MB (${percent}%)`);
-              setUploadSpeed(`${speedMBps.toFixed(1)} MB/s - ${Math.round(remainingTime / 60)} min remaining`);
-            }
-          });
-
-          // Handle completion
-          xhr.addEventListener('load', () => {
-            if (xhr.status === 204 || xhr.status === 201) {
-              setUploadProgress('Upload completed');
-              setProgressPercent(100);
-              resolve();
-            } else {
-              reject(new Error(`Storage upload failed (status ${xhr.status}): ${xhr.responseText}`));
-            }
-          });
-
-          // Handle errors
-          xhr.addEventListener('error', () => {
-            reject(new Error('Upload failed - check CORS configuration and network connection'));
-          });
-
-          xhr.addEventListener('timeout', () => {
-            reject(new Error('Upload timed out'));
-          });
-
-          // Start upload
-          xhr.open('POST', url);
-          xhr.timeout = 300000; // 5 minute timeout
-          xhr.send(form);
-        });
+        const putRes = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })
+        if (!putRes.ok) {
+          const text = await putRes.text().catch(() => '')
+          setError(`Storage upload failed (${putRes.status}): ${text.slice(0,200)}`)
+          setUploading(false)
+          return
+        }
 
         // Register metadata
         setUploadProgress('Finalizing...')
@@ -162,15 +114,12 @@ export default function UploadPage() {
         return
       }
 
-      // Use streaming upload for files larger than 1GB
-      const useStreaming = file.size > 1024 * 1024 * 1024; // 1GB threshold
-      
-      if (useStreaming) {
-        console.log('Using streaming upload for large file');
-        setUploadProgress('Preparing upload...');
-        
-        // Use XMLHttpRequest for progress tracking
-        await new Promise<void>((resolve, reject) => {
+      // Use streaming upload for all files in server mode to get progress tracking
+      console.log('Using streaming upload with progress tracking');
+      setUploadProgress('Preparing upload...');
+
+      // Use XMLHttpRequest for progress tracking
+      await new Promise<void>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           const startTime = Date.now();
           
@@ -248,37 +197,6 @@ export default function UploadPage() {
           
           xhr.send(file);
         });
-      } else {
-        console.log('Using regular upload for small file');
-        
-        // Regular form upload for smaller files
-        const formData = new FormData();
-        formData.append('video', file);
-        formData.append('clientName', clientName);
-        formData.append('projectName', projectName);
-
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10 * 60 * 1000); // 10 minute timeout
-
-        const response = await fetch('/api/upload-cloud', {
-          method: 'POST',
-          body: formData,
-          signal: controller.signal,
-        });
-
-        clearTimeout(timeoutId);
-
-        const data = await response.json();
-
-        if (data.success) {
-          setResult(data);
-          setFile(null);
-          setClientName('');
-          setProjectName('');
-        } else {
-          setError(data.error || 'Upload failed');
-        }
-      }
     } catch (err) {
       setError('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {

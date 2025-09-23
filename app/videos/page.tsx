@@ -20,7 +20,7 @@ export default function VideosPage() {
   const [busyId, setBusyId] = useState<string>('');
   const [health, setHealth] = useState<any>(null);
   const [running, setRunning] = useState<boolean>(false);
-  const [selfTest, setSelfTest] = useState<any>(null);
+  
 
   const loadVideos = async () => {
     setLoading(true);
@@ -85,19 +85,7 @@ export default function VideosPage() {
     }
   };
 
-  const runStorageSelfTest = async () => {
-    setRunning(true);
-    setSelfTest(null);
-    try {
-      const res = await fetch('/api/system/storage-selftest', { method: 'POST' });
-      const data = await res.json();
-      setSelfTest(data);
-    } catch (e) {
-      setSelfTest({ success: false, error: String(e) });
-    } finally {
-      setRunning(false);
-    }
-  };
+  
 
   const fmtSize = (bytes: number) => {
     if (bytes >= 1024 * 1024 * 1024) return `${Math.round(bytes / 1024 / 1024 / 1024 * 100) / 100} GB`;
@@ -113,7 +101,6 @@ export default function VideosPage() {
         <button onClick={loadVideos} disabled={loading} style={{ padding: '8px 12px' }}>{loading ? 'Refreshing...' : 'Refresh'}</button>
         <button onClick={runStartup} disabled={running} style={{ padding: '8px 12px' }}>{running ? 'Working...' : 'Run Startup Tasks'}</button>
         <button onClick={runRecovery} disabled={running} style={{ padding: '8px 12px' }}>{running ? 'Working...' : 'Run Recovery'}</button>
-        <button onClick={runStorageSelfTest} disabled={running} style={{ padding: '8px 12px' }}>{running ? 'Testing...' : 'Test Storage'}</button>
       </div>
 
       {health && (
@@ -125,21 +112,7 @@ export default function VideosPage() {
       {error && (
         <div style={{ background: '#f8d7da', color: '#721c24', padding: 10, borderRadius: 4, marginBottom: 12 }}>{error}</div>
       )}
-
-      {selfTest && (
-        <div style={{ background: selfTest.success ? '#d4edda' : '#f8d7da', color: selfTest.success ? '#155724' : '#721c24', padding: 12, borderRadius: 4, marginBottom: 12, fontSize: 14 }}>
-          <div><strong>Storage Self-Test:</strong> {selfTest.success ? 'OK' : 'FAILED'}</div>
-          {!selfTest.success && (
-            <div style={{ marginTop: 6 }}>
-              <div>put: {String(selfTest.put)}</div>
-              <div>head: {String(selfTest.head)} {selfTest.headError && `(${selfTest.headError})`}</div>
-              <div>get: {String(selfTest.get)} {selfTest.getError && `(${selfTest.getError})`}</div>
-              <div>deleted: {String(selfTest.deleted)} {selfTest.deleteError && `(${selfTest.deleteError})`}</div>
-              {selfTest.error && <div>Error: {selfTest.error}</div>}
-            </div>
-          )}
-        </div>
-      )}
+      
 
       {videos.length === 0 && !loading && (
         <div style={{ color: '#666' }}>No videos yet. Upload one to get started.</div>

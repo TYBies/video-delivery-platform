@@ -1,0 +1,12 @@
+[
+  {
+    "corsRuleName": "app-uploads",
+    "allowedOrigins": [
+      "https://video-delivery-platform-bv9t.vercel.app",
+      "http://localhost:3001"
+    ],
+    "allowedHeaders": ["*"],
+    "allowedOperations": ["s3_post", "s3_get", "s3_head", "s3_put"],
+    "maxAgeSeconds": 3600
+  }
+]
