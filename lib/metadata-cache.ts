@@ -113,7 +113,14 @@ class RateLimiter {
     const now = Date.now();
     const requests = this.requests.get(key) || [];
     const validRequests = requests.filter(timestamp => now - timestamp < this.windowMs);
+    // Update the stored requests to only include valid ones
+    this.requests.set(key, validRequests);
     return Math.max(0, this.maxRequests - validRequests.length);
+  }
+
+  // For testing - reset rate limiter state
+  reset(): void {
+    this.requests.clear();
   }
 }
 
