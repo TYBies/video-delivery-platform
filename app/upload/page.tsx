@@ -86,13 +86,63 @@ export default function UploadPage() {
         const { url, videoId, key } = await presignRes.json()
 
         setUploadProgress('Uploading to storage...')
-        const putRes = await fetch(url, { method: 'PUT', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })
-        if (!putRes.ok) {
-          const text = await putRes.text().catch(() => '')
-          setError(`Storage upload failed (${putRes.status}): ${text.slice(0,200)}`)
-          setUploading(false)
-          return
-        }
+
+        // Use XMLHttpRequest for progress tracking in S3 uploads too
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          const startTime = Date.now();
+
+          // Track upload progress
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+              const percent = Math.round((e.loaded / e.total) * 100);
+              const uploadedMB = Math.round(e.loaded / 1024 / 1024);
+              const totalMB = Math.round(e.total / 1024 / 1024);
+
+              // Calculate upload speed
+              const elapsed = (Date.now() - startTime) / 1000; // seconds
+              setProgressPercent(percent);
+              setUploadProgress(`${uploadedMB} MB / ${totalMB} MB (${percent}%)`);
+
+              if (elapsed > 1 && e.loaded > 0) { // Wait at least 1 second for accurate speed calculation
+                const speedMBps = (e.loaded / 1024 / 1024) / elapsed;
+                const remainingBytes = e.total - e.loaded;
+                const bytesPerSecond = e.loaded / elapsed;
+
+                if (remainingBytes > 0 && bytesPerSecond > 0) {
+                  const remainingSeconds = remainingBytes / bytesPerSecond;
+                  const remainingMinutes = Math.round(remainingSeconds / 60);
+                  setUploadSpeed(`${speedMBps.toFixed(1)} MB/s - ${remainingMinutes > 0 ? `${remainingMinutes} min` : '< 1 min'} remaining`);
+                } else {
+                  setUploadSpeed(`${speedMBps.toFixed(1)} MB/s`);
+                }
+              }
+            }
+          });
+
+          // Handle completion
+          xhr.addEventListener('load', () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              setUploadProgress('Upload complete, finalizing...');
+              setProgressPercent(100);
+              resolve();
+            } else {
+              setError(`Storage upload failed (${xhr.status})`);
+              reject(new Error(`HTTP ${xhr.status}`));
+            }
+          });
+
+          // Handle errors
+          xhr.addEventListener('error', () => {
+            setError('Upload failed - network error');
+            reject(new Error('Network error'));
+          });
+
+          // Start the upload
+          xhr.open('PUT', url);
+          xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+          xhr.send(file);
+        })
 
         // Register metadata
         setUploadProgress('Finalizing...')
@@ -116,6 +166,9 @@ export default function UploadPage() {
         }
         setResult({ videoId, metadata: regData.metadata })
         setUploading(false)
+        setUploadProgress('')
+        setProgressPercent(0)
+        setUploadSpeed('')
         setFile(null)
         setClientName('')
         setProjectName('')
@@ -209,6 +262,9 @@ export default function UploadPage() {
       setError('Upload failed: ' + (err instanceof Error ? err.message : 'Unknown error'));
     } finally {
       setUploading(false);
+      setUploadProgress('');
+      setProgressPercent(0);
+      setUploadSpeed('');
     }
   };
 
