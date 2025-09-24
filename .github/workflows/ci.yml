@@ -1,0 +1,136 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [ develop, 'feature/**', 'fix/**', 'test/**' ]
+  pull_request:
+    branches: [ develop, main ]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  security-audit:
+    name: 🔒 Security Audit
+    runs-on: ubuntu-latest
+    # Security runs FIRST - if it fails, everything stops
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: 📥 Install dependencies
+      run: npm ci
+
+    - name: 🛡️ NPM Security Audit (STRICT)
+      run: npm audit --audit-level high
+      # FAIL on high/critical vulnerabilities
+
+    - name: 🔍 Check for known vulnerabilities
+      run: npx audit-ci --high --critical
+      # FAIL on high/critical vulnerabilities
+
+  quality-checks:
+    name: 🔍 Quality Checks
+    runs-on: ubuntu-latest
+    needs: security-audit  # Only run if security passes
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: 📥 Install dependencies
+      run: npm ci
+
+    - name: 🔍 Lint code (STRICT)
+      run: npm run lint
+      # FAIL on any linting errors
+
+    - name: 🔧 Type checking (STRICT)
+      run: npm run build
+      # FAIL on any TypeScript errors
+
+    - name: 🧪 Run tests (STRICT)
+      run: npm test -- --coverage --watchAll=false --passWithNoTests --coverageThreshold='{"global":{"branches":50,"functions":50,"lines":50,"statements":50}}'
+      env:
+        NODE_ENV: test
+      # FAIL if coverage below 50%
+
+    - name: 📊 Upload coverage reports
+      uses: codecov/codecov-action@v3
+      if: success()
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        fail_ci_if_error: false
+
+  build-test:
+    name: 🏗️ Build Test
+    runs-on: ubuntu-latest
+    needs: [security-audit, quality-checks]  # Both must pass
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 📦 Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: 📥 Install dependencies
+      run: npm ci
+
+    - name: 🏗️ Build application (STRICT)
+      run: npm run build
+      env:
+        NODE_ENV: production
+      # FAIL on any build errors
+
+    - name: 📦 Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts-${{ github.sha }}
+        path: |
+          .next/
+          !.next/cache/
+        retention-days: 1
+
+  security-scan:
+    name: 🛡️ Advanced Security Scan
+    runs-on: ubuntu-latest
+    needs: build-test  # Only after successful build
+
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🔍 CodeQL Analysis (STRICT)
+      uses: github/codeql-action/init@v3
+      with:
+        languages: javascript
+
+    - name: 🏗️ Autobuild
+      uses: github/codeql-action/autobuild@v3
+
+    - name: 🔍 Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v3
+      # FAIL on any security vulnerabilities found
+
+    - name: 🔒 Dependency Review (STRICT)
+      uses: actions/dependency-review-action@v4
+      with:
+        fail-on-severity: high
+        # FAIL on high/critical dependency vulnerabilities
