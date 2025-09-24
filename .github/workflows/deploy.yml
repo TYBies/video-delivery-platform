@@ -38,7 +38,7 @@ jobs:
         npm install -g vercel@latest
         vercel --token ${{ secrets.VERCEL_TOKEN }} --yes
       env:
-        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }} # we need to get this variable from vercel
         VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
   create-release-pr:
@@ -122,13 +122,13 @@ jobs:
         npm install -g vercel@latest
         vercel --prod --token ${{ secrets.VERCEL_TOKEN }} --yes
       env:
-        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }} # get this from vercel
         VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
     - name: 🎉 Post-deployment notification
       run: |
         echo "🎉 Successfully deployed to production!"
-        echo "🔗 Production URL: https://your-domain.vercel.app"
+        echo "🔗 Production URL: https://video-delivery-platform-bv9t.vercel.app/"
 
   performance-monitoring:
     name: 📊 Performance Monitoring

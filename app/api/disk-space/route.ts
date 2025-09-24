@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { DiskSpaceManager } from '@/lib/disk-space';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const diskSpace = DiskSpaceManager.getReadableDiskSpace();
     const warning = DiskSpaceManager.getDiskSpaceWarning();
@@ -9,16 +9,16 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       diskSpace,
-      warning
+      warning,
     });
-
   } catch (error) {
     console.error('Disk space check error:', error);
-    
+
     return NextResponse.json(
-      { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to check disk space' 
+      {
+        success: false,
+        error:
+          error instanceof Error ? error.message : 'Failed to check disk space',
       },
       { status: 500 }
     );

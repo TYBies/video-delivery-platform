@@ -1,4 +1,5 @@
 import fs from 'fs/promises';
+import fsSync from 'fs';
 import path from 'path';
 import { OrphanFile, OrphanRegistry, VideoMetadata } from '../types';
 import { MetadataManager } from './metadata';
@@ -8,7 +9,14 @@ export class OrphanRecoveryService {
   private storagePath: string;
   private recoveryPath: string;
   private metadataManager: MetadataManager;
-  private readonly validExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'];
+  private readonly validExtensions = [
+    '.mp4',
+    '.mov',
+    '.avi',
+    '.mkv',
+    '.webm',
+    '.m4v',
+  ];
 
   constructor(storagePath?: string) {
     this.storagePath = storagePath || process.env.STORAGE_PATH || './uploads';
@@ -40,7 +48,7 @@ export class OrphanRecoveryService {
         }
 
         const videoDir = path.join(videosDir, folder);
-        
+
         // Check if it's actually a directory
         try {
           const stats = await fs.stat(videoDir);
@@ -62,7 +70,7 @@ export class OrphanRecoveryService {
           // No metadata file, check for video files
           try {
             const files = await fs.readdir(videoDir);
-            const videoFiles = files.filter(file => 
+            const videoFiles = files.filter((file) =>
               /\.(mp4|mov|avi|mkv|webm|m4v)$/i.test(file)
             );
 
@@ -116,10 +124,10 @@ export class OrphanRecoveryService {
 
       // Save the reconstructed metadata
       await this.metadataManager.saveMetadata(metadata);
-      
+
       console.log(`Successfully recovered orphan: ${orphan.videoId}`);
       await this.updateOrphanRegistry(orphan.videoId, 'recovered', metadata);
-      
+
       return metadata;
     } catch (error) {
       console.error(`Failed to recover orphan ${orphan.videoId}:`, error);
@@ -135,13 +143,13 @@ export class OrphanRecoveryService {
     try {
       // Extract information from file path and properties
       const filename = path.basename(orphan.path);
-      const stats = await fs.stat(orphan.path);
-      
+      await fs.stat(orphan.path);
+
       // Try to extract client and project names from directory structure or filename
       // This is a best-effort approach - in production you might want more sophisticated parsing
       let clientName = 'recovered';
       let projectName = 'recovered';
-      
+
       // Check if there are any clues in the filename
       const filenameParts = filename.split(/[-_\s]/);
       if (filenameParts.length >= 2) {
@@ -169,7 +177,10 @@ export class OrphanRecoveryService {
 
       return metadata;
     } catch (error) {
-      console.error(`Failed to reconstruct metadata for ${orphan.path}:`, error);
+      console.error(
+        `Failed to reconstruct metadata for ${orphan.path}:`,
+        error
+      );
       return null;
     }
   }
@@ -181,7 +192,7 @@ export class OrphanRecoveryService {
     try {
       // Check if file exists and is readable
       await fs.access(orphan.path, fs.constants.R_OK);
-      
+
       // Check file size is reasonable (not empty, not too small)
       const stats = await fs.stat(orphan.path);
       // Accept small test fixtures but reject trivially small files
@@ -213,7 +224,9 @@ export class OrphanRecoveryService {
     for (const orphan of orphans) {
       const isValid = await this.validateOrphanFile(orphan);
       if (!isValid) {
-        cleanedCount += await this.moveToCleanup(orphan).then(() => 1).catch(() => 0);
+        cleanedCount += await this.moveToCleanup(orphan)
+          .then(() => 1)
+          .catch(() => 0);
       }
     }
 
@@ -225,20 +238,39 @@ export class OrphanRecoveryService {
         if (folder.startsWith('.')) continue;
         const videoDir = path.join(videosDir, folder);
         let stats;
-        try { stats = await fs.stat(videoDir); } catch { continue; }
+        try {
+          stats = await fs.stat(videoDir);
+        } catch {
+          continue;
+        }
         if (!stats.isDirectory()) continue;
 
         const metadataFile = path.join(videoDir, 'metadata.json');
-        try { await fs.access(metadataFile); continue; } catch {}
+        try {
+          await fs.access(metadataFile);
+          continue;
+        } catch {}
 
         const files = await fs.readdir(videoDir);
         for (const file of files) {
           const ext = path.extname(file).toLowerCase();
           if (!this.validExtensions.includes(ext)) {
             const fp = path.join(videoDir, file);
-            let st; try { st = await fs.stat(fp); } catch { continue; }
-            const orphan: OrphanFile = { path: fp, size: st.size, createdDate: st.birthtime, videoId: folder };
-            cleanedCount += await this.moveToCleanup(orphan).then(() => 1).catch(() => 0);
+            let st;
+            try {
+              st = await fs.stat(fp);
+            } catch {
+              continue;
+            }
+            const orphan: OrphanFile = {
+              path: fp,
+              size: st.size,
+              createdDate: st.birthtime,
+              videoId: folder,
+            };
+            cleanedCount += await this.moveToCleanup(orphan)
+              .then(() => 1)
+              .catch(() => 0);
           }
         }
       }
@@ -255,9 +287,9 @@ export class OrphanRecoveryService {
   private async calculateFileChecksum(filePath: string): Promise<string> {
     return new Promise((resolve, reject) => {
       const hash = crypto.createHash('md5');
-      const stream = require('fs').createReadStream(filePath);
+      const stream = fsSync.createReadStream(filePath);
 
-      stream.on('data', (data: Buffer) => {
+      stream.on('data', (data: string | Buffer) => {
         hash.update(data);
       });
 
@@ -275,7 +307,10 @@ export class OrphanRecoveryService {
     // Move invalid file to a cleanup directory instead of deleting
     const cleanupDir = path.join(this.recoveryPath, 'invalid');
     await fs.mkdir(cleanupDir, { recursive: true });
-    const cleanupPath = path.join(cleanupDir, `${orphan.videoId}_${path.basename(orphan.path)}`);
+    const cleanupPath = path.join(
+      cleanupDir,
+      `${orphan.videoId}_${path.basename(orphan.path)}`
+    );
     await fs.rename(orphan.path, cleanupPath);
     try {
       await fs.rmdir(path.dirname(orphan.path));
@@ -287,12 +322,12 @@ export class OrphanRecoveryService {
    * Update orphan registry
    */
   private async updateOrphanRegistry(
-    videoId: string, 
+    videoId: string,
     status: 'pending' | 'recovered' | 'failed' | 'invalid',
     metadata?: VideoMetadata
   ): Promise<void> {
     await this.initialize();
-    
+
     const registryPath = path.join(this.recoveryPath, 'orphans.json');
     let registry: OrphanRegistry;
 
@@ -319,7 +354,7 @@ export class OrphanRecoveryService {
     registry.orphans[videoId].recoveryStatus = status;
     registry.orphans[videoId].recoveryAttempts += 1;
     registry.orphans[videoId].lastRecoveryAttempt = new Date();
-    
+
     if (metadata) {
       registry.orphans[videoId].reconstructedMetadata = metadata;
     }
@@ -332,20 +367,24 @@ export class OrphanRecoveryService {
    */
   async getOrphanRegistry(): Promise<OrphanRegistry> {
     const registryPath = path.join(this.recoveryPath, 'orphans.json');
-    
+
     try {
       const data = await fs.readFile(registryPath, 'utf-8');
       const registry = JSON.parse(data);
-      
+
       // Convert date strings back to Date objects
       registry.lastScan = new Date(registry.lastScan);
-      Object.keys(registry.orphans).forEach(videoId => {
-        registry.orphans[videoId].discoveredDate = new Date(registry.orphans[videoId].discoveredDate);
+      Object.keys(registry.orphans).forEach((videoId) => {
+        registry.orphans[videoId].discoveredDate = new Date(
+          registry.orphans[videoId].discoveredDate
+        );
         if (registry.orphans[videoId].lastRecoveryAttempt) {
-          registry.orphans[videoId].lastRecoveryAttempt = new Date(registry.orphans[videoId].lastRecoveryAttempt);
+          registry.orphans[videoId].lastRecoveryAttempt = new Date(
+            registry.orphans[videoId].lastRecoveryAttempt
+          );
         }
       });
-      
+
       return registry;
     } catch {
       return {
@@ -381,10 +420,18 @@ export class OrphanRecoveryService {
       for (const folder of dirs) {
         if (folder.startsWith('.')) continue;
         const videoDir = path.join(videosDir, folder);
-        let stats; try { stats = await fs.stat(videoDir); } catch { continue; }
+        let stats;
+        try {
+          stats = await fs.stat(videoDir);
+        } catch {
+          continue;
+        }
         if (!stats.isDirectory()) continue;
         const metadataFile = path.join(videoDir, 'metadata.json');
-        try { await fs.access(metadataFile); continue; } catch {}
+        try {
+          await fs.access(metadataFile);
+          continue;
+        } catch {}
         const files = await fs.readdir(videoDir);
         for (const file of files) {
           const ext = path.extname(file).toLowerCase();

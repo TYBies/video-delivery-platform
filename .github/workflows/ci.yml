@@ -106,7 +106,7 @@ jobs:
         path: |
           .next/
           !.next/cache/
-        retention-days: 1
+        retention-days: 7
 
   security-scan:
     name: 🛡️ Advanced Security Scan
