@@ -34,12 +34,12 @@ jobs:
         NEXT_PUBLIC_VERCEL_ENV: staging
 
     - name: 🚀 Deploy to Vercel Staging
-      uses: vercel/action@v1
-      with:
-        vercel-token: ${{ secrets.VERCEL_TOKEN }}
-        vercel-args: '--prebuilt'
-        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+      run: |
+        npm install -g vercel@latest
+        vercel --token ${{ secrets.VERCEL_TOKEN }} --yes
+      env:
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
   create-release-pr:
     name: 📝 Create Release PR
@@ -118,12 +118,12 @@ jobs:
         NEXT_PUBLIC_VERCEL_ENV: production
 
     - name: 🚀 Deploy to Vercel Production
-      uses: vercel/action@v1
-      with:
-        vercel-token: ${{ secrets.VERCEL_TOKEN }}
-        vercel-args: '--prebuilt --prod'
-        vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-        vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+      run: |
+        npm install -g vercel@latest
+        vercel --prod --token ${{ secrets.VERCEL_TOKEN }} --yes
+      env:
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
     - name: 🎉 Post-deployment notification
       run: |
