@@ -57,15 +57,15 @@ export function handleS3Error(error: any): { message: string; userFriendly: stri
     };
   }
 
-  if (error.Code === 'AccessDenied' && errorCode === 403) {
+  if (error.Code === 'AccessDenied') {
     return {
       message: 'Access denied to cloud storage',
-      userFriendly: 'Access to cloud storage was denied. This may be due to daily limits or configuration issues. Please try again later.',
+      userFriendly: 'Access to cloud storage was denied. This may be due to daily limits that reset at midnight GMT or configuration issues. Please try again later.',
       isRateLimited: true
     };
   }
 
-  if (errorCode === 404) {
+  if (error.Code === 'NoSuchKey' || errorCode === 404) {
     return {
       message: 'Resource not found in cloud storage',
       userFriendly: 'The requested file was not found in cloud storage.',
@@ -73,7 +73,7 @@ export function handleS3Error(error: any): { message: string; userFriendly: stri
     };
   }
 
-  if (errorCode >= 500) {
+  if (error.Code === 'InternalError' || errorCode >= 500) {
     return {
       message: 'Cloud storage server error',
       userFriendly: 'Cloud storage is experiencing technical difficulties. Please try again in a few minutes.',

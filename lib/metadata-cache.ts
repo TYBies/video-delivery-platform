@@ -19,11 +19,13 @@ class MetadataCache {
 
   private cleanup(): void {
     // Remove expired entries to prevent memory leaks
-    for (const [key, entry] of this.cache.entries()) {
+    const keysToDelete: string[] = [];
+    this.cache.forEach((entry, key) => {
       if (this.isExpired(entry)) {
-        this.cache.delete(key);
+        keysToDelete.push(key);
       }
-    }
+    });
+    keysToDelete.forEach(key => this.cache.delete(key));
   }
 
   get<T>(key: string): T | null {
