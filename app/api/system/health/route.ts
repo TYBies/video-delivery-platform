@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { StartupService } from '@/lib/startup-service';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const startupService = new StartupService();
     const health = await startupService.getSystemHealth();
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('System health check failed:', error);
-    
+
     return NextResponse.json(
       {
         success: false,

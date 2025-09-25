@@ -30,7 +30,7 @@ export class EnhancedUploadHandler {
   ): Promise<VideoMetadata> {
     // Generate upload ID for tracking
     const uploadId = this.generateUploadId();
-    
+
     console.log(`Starting enhanced upload: ${filename} (ID: ${uploadId})`);
 
     try {
@@ -39,9 +39,16 @@ export class EnhancedUploadHandler {
       await this.orphanRecovery.initialize();
 
       // Check for existing orphaned files that match this upload
-      const existingVideo = await this.checkForExistingVideo(clientName, projectName, filename, contentLength);
+      const existingVideo = await this.checkForExistingVideo(
+        clientName,
+        projectName,
+        filename,
+        contentLength
+      );
       if (existingVideo) {
-        console.log(`Found existing video for ${filename}, returning immediately`);
+        console.log(
+          `Found existing video for ${filename}, returning immediately`
+        );
         return existingVideo;
       }
 
@@ -71,8 +78,7 @@ export class EnhancedUploadHandler {
         clientName,
         projectName,
         filename,
-        contentLength,
-        uploadId
+        contentLength
       );
 
       // Mark upload as completed
@@ -81,15 +87,22 @@ export class EnhancedUploadHandler {
 
       console.log(`Upload completed successfully: ${metadata.id}`);
       return metadata;
-
     } catch (error) {
       console.error(`Upload failed for ${uploadId}:`, error);
-      
+
       // Mark upload as failed
-      await this.stateManager.markUploadFailed(uploadId, error instanceof Error ? error.message : 'Unknown error');
+      await this.stateManager.markUploadFailed(
+        uploadId,
+        error instanceof Error ? error.message : 'Unknown error'
+      );
 
       // Attempt automatic recovery
-      const recoveredVideo = await this.attemptAutomaticRecovery(clientName, projectName, filename, contentLength);
+      const recoveredVideo = await this.attemptAutomaticRecovery(
+        clientName,
+        projectName,
+        filename,
+        contentLength
+      );
       if (recoveredVideo) {
         console.log(`Automatic recovery successful for ${filename}`);
         return recoveredVideo;
@@ -116,15 +129,16 @@ export class EnhancedUploadHandler {
       // Check if there's already a video with similar characteristics
       const { MetadataManager } = await import('./metadata');
       const metadataManager = new MetadataManager(this.storagePath);
-      
+
       const clientVideos = await metadataManager.getVideosByClient(clientName);
-      
+
       // Look for videos with same filename and similar size (within 5% tolerance)
       for (const video of clientVideos) {
-        if (video.filename === filename && 
-            video.projectName === projectName &&
-            Math.abs(video.fileSize - contentLength) / contentLength < 0.05) {
-          
+        if (
+          video.filename === filename &&
+          video.projectName === projectName &&
+          Math.abs(video.fileSize - contentLength) / contentLength < 0.05
+        ) {
           console.log(`Found existing video: ${video.id} for ${filename}`);
           return video;
         }
@@ -151,30 +165,36 @@ export class EnhancedUploadHandler {
 
       // Scan for orphaned files
       const orphans = await this.orphanRecovery.scanForOrphans();
-      
+
       // Look for orphans that might match this upload
       for (const orphan of orphans) {
         // Check if file size matches (within 10% tolerance for partial uploads)
-        const sizeTolerance = Math.abs(orphan.size - contentLength) / contentLength;
-        
+        const sizeTolerance =
+          Math.abs(orphan.size - contentLength) / contentLength;
+
         if (sizeTolerance < 0.1) {
           console.log(`Found potential orphan match: ${orphan.videoId}`);
-          
+
           // Attempt to recover this orphan
           const recovered = await this.orphanRecovery.recoverOrphan(orphan);
           if (recovered) {
             // Update the recovered metadata with correct client/project info
             const { MetadataManager } = await import('./metadata');
             const metadataManager = new MetadataManager(this.storagePath);
-            
-            const updatedMetadata = await metadataManager.updateMetadata(recovered.id, {
-              clientName,
-              projectName,
-              filename,
-            });
+
+            const updatedMetadata = await metadataManager.updateMetadata(
+              recovered.id,
+              {
+                clientName,
+                projectName,
+                filename,
+              }
+            );
 
             if (updatedMetadata) {
-              console.log(`Successfully recovered and updated orphan: ${updatedMetadata.id}`);
+              console.log(
+                `Successfully recovered and updated orphan: ${updatedMetadata.id}`
+              );
               return updatedMetadata;
             }
           }
@@ -211,7 +231,9 @@ export class EnhancedUploadHandler {
         return null;
       }
 
-      const percentage = Math.round((state.uploadedSize / state.totalSize) * 100);
+      const percentage = Math.round(
+        (state.uploadedSize / state.totalSize) * 100
+      );
 
       return {
         uploadedSize: state.uploadedSize,
@@ -228,13 +250,18 @@ export class EnhancedUploadHandler {
   /**
    * Resume a failed upload
    */
-  async resumeUpload(uploadId: string, request: NextRequest): Promise<VideoMetadata> {
+  async resumeUpload(
+    uploadId: string,
+    request: NextRequest
+  ): Promise<VideoMetadata> {
     const state = await this.stateManager.loadUploadState(uploadId);
     if (!state) {
       throw new Error(`Upload state not found for ID: ${uploadId}`);
     }
 
-    console.log(`Resuming upload: ${uploadId} from ${state.uploadedSize}/${state.totalSize} bytes`);
+    console.log(
+      `Resuming upload: ${uploadId} from ${state.uploadedSize}/${state.totalSize} bytes`
+    );
 
     // For now, restart the upload (in a full implementation, this would resume from the last chunk)
     return this.handleUploadWithRecovery(
@@ -252,7 +279,7 @@ export class EnhancedUploadHandler {
   async runMaintenance(): Promise<void> {
     try {
       console.log('Running upload system maintenance...');
-      
+
       // Clean up expired upload states
       const cleanedStates = await this.stateManager.cleanupExpiredUploads(24);
       if (cleanedStates > 0) {

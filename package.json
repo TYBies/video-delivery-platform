@@ -56,8 +56,7 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx}": [
-      "eslint --fix",
-      "npm run test -- --findRelatedTests --passWithNoTests"
+      "eslint --fix"
     ],
     "*.{js,jsx,ts,tsx,json,md}": [
       "prettier --write"

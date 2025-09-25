@@ -18,7 +18,7 @@ describe('UploadStateManager', () => {
     // Clean up test directory
     try {
       await fs.rm(testStoragePath, { recursive: true, force: true });
-    } catch (error) {
+    } catch {
       // Ignore cleanup errors
     }
   });
@@ -44,11 +44,14 @@ describe('UploadStateManager', () => {
   describe('saveUploadState', () => {
     it('should save upload state to file', async () => {
       const state = createTestUploadState();
-      
+
       await manager.saveUploadState(state);
-      
+
       const stateFilePath = manager.getStateFilePath(state.uploadId);
-      const exists = await fs.access(stateFilePath).then(() => true).catch(() => false);
+      const exists = await fs
+        .access(stateFilePath)
+        .then(() => true)
+        .catch(() => false);
       expect(exists).toBe(true);
     });
 
@@ -56,11 +59,14 @@ describe('UploadStateManager', () => {
       // Remove the state directory
       const statePath = path.join(testStoragePath, 'state');
       await fs.rm(statePath, { recursive: true, force: true });
-      
+
       const state = createTestUploadState();
       await manager.saveUploadState(state);
-      
-      const exists = await fs.access(statePath).then(() => true).catch(() => false);
+
+      const exists = await fs
+        .access(statePath)
+        .then(() => true)
+        .catch(() => false);
       expect(exists).toBe(true);
     });
   });
@@ -69,9 +75,9 @@ describe('UploadStateManager', () => {
     it('should load saved upload state', async () => {
       const originalState = createTestUploadState();
       await manager.saveUploadState(originalState);
-      
+
       const loadedState = await manager.loadUploadState(originalState.uploadId);
-      
+
       expect(loadedState).not.toBeNull();
       expect(loadedState!.uploadId).toBe(originalState.uploadId);
       expect(loadedState!.videoId).toBe(originalState.videoId);
@@ -89,10 +95,10 @@ describe('UploadStateManager', () => {
     it('should handle corrupted state files', async () => {
       const uploadId = 'corrupted-upload';
       const stateFilePath = manager.getStateFilePath(uploadId);
-      
+
       // Write invalid JSON
       await fs.writeFile(stateFilePath, 'invalid json content');
-      
+
       const loadedState = await manager.loadUploadState(uploadId);
       expect(loadedState).toBeNull();
     });
@@ -102,18 +108,21 @@ describe('UploadStateManager', () => {
     it('should update upload progress', async () => {
       const state = createTestUploadState();
       await manager.saveUploadState(state);
-      
+
       const newUploadedSize = 750000;
       await manager.updateUploadProgress(state.uploadId, newUploadedSize);
-      
+
       const updatedState = await manager.loadUploadState(state.uploadId);
       expect(updatedState!.uploadedSize).toBe(newUploadedSize);
-      expect(updatedState!.lastActivity.getTime()).toBeGreaterThan(state.lastActivity.getTime());
+      expect(updatedState!.lastActivity.getTime()).toBeGreaterThan(
+        state.lastActivity.getTime()
+      );
     });
 
     it('should throw error for non-existent upload', async () => {
-      await expect(manager.updateUploadProgress('non-existent', 1000))
-        .rejects.toThrow('Upload state not found for ID: non-existent');
+      await expect(
+        manager.updateUploadProgress('non-existent', 1000)
+      ).rejects.toThrow('Upload state not found for ID: non-existent');
     });
   });
 
@@ -121,9 +130,9 @@ describe('UploadStateManager', () => {
     it('should mark upload as completed', async () => {
       const state = createTestUploadState();
       await manager.saveUploadState(state);
-      
+
       await manager.markUploadComplete(state.uploadId);
-      
+
       const updatedState = await manager.loadUploadState(state.uploadId);
       expect(updatedState!.status).toBe('completed');
     });
@@ -133,19 +142,55 @@ describe('UploadStateManager', () => {
     it('should mark upload as failed with error message', async () => {
       const state = createTestUploadState();
       await manager.saveUploadState(state);
-      
+
       const errorMessage = 'Network connection lost';
       await manager.markUploadFailed(state.uploadId, errorMessage);
-      
+
       const updatedState = await manager.loadUploadState(state.uploadId);
       expect(updatedState!.status).toBe('failed');
       expect(updatedState!.retryCount).toBe(1);
-      
+
       // Check that error is stored in the state file
       const stateFilePath = manager.getStateFilePath(state.uploadId);
       const data = await fs.readFile(stateFilePath, 'utf-8');
       const stateFile = JSON.parse(data);
       expect(stateFile.status.lastError).toBe(errorMessage);
+    });
+  });
+
+  describe('saveUploadState preservation', () => {
+    it('should preserve completedChunks, chunkChecksums, and lastError on subsequent saves', async () => {
+      const state = createTestUploadState();
+      await manager.saveUploadState(state);
+
+      // Manually enrich the persisted state with fields that might be added by other processes
+      const stateFilePath = manager.getStateFilePath(state.uploadId);
+      const raw = await fs.readFile(stateFilePath, 'utf-8');
+      const fileJson = JSON.parse(raw);
+      fileJson.progress.completedChunks = [1, 2, 5];
+      fileJson.integrity.chunkChecksums = { '1': 'aaa', '2': 'bbb' };
+      fileJson.status.lastError = 'previous error';
+      await fs.writeFile(stateFilePath, JSON.stringify(fileJson, null, 2));
+
+      // Now update the state (e.g., progress) and save again
+      const updated: UploadState = {
+        ...state,
+        uploadedSize: state.uploadedSize + 1024,
+        lastActivity: new Date(),
+      };
+      await manager.saveUploadState(updated);
+
+      // Load raw file to verify preserved fields
+      const rawAfter = await fs.readFile(stateFilePath, 'utf-8');
+      const jsonAfter = JSON.parse(rawAfter);
+
+      expect(jsonAfter.progress.completedChunks).toEqual([1, 2, 5]);
+      expect(jsonAfter.integrity.chunkChecksums).toEqual({
+        '1': 'aaa',
+        '2': 'bbb',
+      });
+      expect(jsonAfter.status.lastError).toBe('previous error');
+      expect(jsonAfter.progress.uploadedSize).toBe(updated.uploadedSize);
     });
   });
 
@@ -155,12 +200,12 @@ describe('UploadStateManager', () => {
       oldState.uploadId = 'old-upload';
       oldState.status = 'completed';
       oldState.lastActivity = new Date(Date.now() - 25 * 60 * 60 * 1000); // 25 hours ago
-      
+
       await manager.saveUploadState(oldState);
-      
+
       const cleanedCount = await manager.cleanupExpiredUploads(24);
       expect(cleanedCount).toBe(1);
-      
+
       const loadedState = await manager.loadUploadState(oldState.uploadId);
       expect(loadedState).toBeNull();
     });
@@ -169,12 +214,12 @@ describe('UploadStateManager', () => {
       const activeState = createTestUploadState();
       activeState.status = 'active';
       activeState.lastActivity = new Date(Date.now() - 25 * 60 * 60 * 1000); // 25 hours ago
-      
+
       await manager.saveUploadState(activeState);
-      
+
       const cleanedCount = await manager.cleanupExpiredUploads(24);
       expect(cleanedCount).toBe(0);
-      
+
       const loadedState = await manager.loadUploadState(activeState.uploadId);
       expect(loadedState).not.toBeNull();
     });
@@ -185,24 +230,24 @@ describe('UploadStateManager', () => {
       const activeState1 = createTestUploadState();
       activeState1.uploadId = 'active-1';
       activeState1.status = 'active';
-      
+
       const activeState2 = createTestUploadState();
       activeState2.uploadId = 'active-2';
       activeState2.status = 'active';
-      
+
       const completedState = createTestUploadState();
       completedState.uploadId = 'completed-1';
       completedState.status = 'completed';
-      
+
       await manager.saveUploadState(activeState1);
       await manager.saveUploadState(activeState2);
       await manager.saveUploadState(completedState);
-      
+
       const activeUploads = await manager.getActiveUploads();
       expect(activeUploads).toHaveLength(2);
-      expect(activeUploads.map(u => u.uploadId)).toContain('active-1');
-      expect(activeUploads.map(u => u.uploadId)).toContain('active-2');
-      expect(activeUploads.map(u => u.uploadId)).not.toContain('completed-1');
+      expect(activeUploads.map((u) => u.uploadId)).toContain('active-1');
+      expect(activeUploads.map((u) => u.uploadId)).toContain('active-2');
+      expect(activeUploads.map((u) => u.uploadId)).not.toContain('completed-1');
     });
   });
 
@@ -210,7 +255,7 @@ describe('UploadStateManager', () => {
     it('should return true for existing upload state', async () => {
       const state = createTestUploadState();
       await manager.saveUploadState(state);
-      
+
       const exists = await manager.uploadStateExists(state.uploadId);
       expect(exists).toBe(true);
     });
@@ -225,10 +270,10 @@ describe('UploadStateManager', () => {
     it('should delete upload state file', async () => {
       const state = createTestUploadState();
       await manager.saveUploadState(state);
-      
+
       const deleted = await manager.deleteUploadState(state.uploadId);
       expect(deleted).toBe(true);
-      
+
       const exists = await manager.uploadStateExists(state.uploadId);
       expect(exists).toBe(false);
     });

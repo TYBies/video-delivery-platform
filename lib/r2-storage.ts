@@ -1,16 +1,16 @@
-import { 
-  PutObjectCommand, 
-  GetObjectCommand, 
-  DeleteObjectCommand, 
+import {
+  PutObjectCommand,
+  GetObjectCommand,
+  DeleteObjectCommand,
   HeadObjectCommand,
-  ListObjectsV2Command 
+  ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
 import { R2Client } from './r2-client';
 import { R2ErrorHandler, RetryHandler } from './r2-errors';
 import { VideoMetadata } from '../types';
 import fs from 'fs/promises';
 import { Readable } from 'stream';
-import { getFileExtension, getVideoContentTypeByExt } from './mime'
+import { getFileExtension, getVideoContentTypeByExt } from './mime';
 
 export class R2Storage {
   private r2Client: R2Client;
@@ -25,27 +25,29 @@ export class R2Storage {
    * Upload video file to R2 storage
    */
   async uploadVideo(
-    videoId: string, 
-    fileBuffer: Buffer, 
+    videoId: string,
+    fileBuffer: Buffer,
     metadata: VideoMetadata
   ): Promise<{ success: boolean; r2Path?: string; error?: string }> {
     try {
       const r2Path = `videos/${videoId}/video${getFileExtension(metadata.filename)}`;
-      
-      const uploadResult = await RetryHandler.withRetry(async () => {
+
+      await RetryHandler.withRetry(async () => {
         const command = new PutObjectCommand({
           Bucket: this.bucket,
           Key: r2Path,
           Body: fileBuffer,
-          ContentType: getVideoContentTypeByExt(getFileExtension(metadata.filename)),
+          ContentType: getVideoContentTypeByExt(
+            getFileExtension(metadata.filename)
+          ),
           Metadata: {
             'original-filename': metadata.filename,
             'client-name': metadata.clientName,
             'project-name': metadata.projectName,
             'upload-date': metadata.uploadDate.toISOString(),
             'file-size': metadata.fileSize.toString(),
-            'checksum-md5': metadata.checksumMD5 || ''
-          }
+            'checksum-md5': metadata.checksumMD5 || '',
+          },
         });
 
         return await this.r2Client.getClient().send(command);
@@ -53,13 +55,13 @@ export class R2Storage {
 
       return {
         success: true,
-        r2Path
+        r2Path,
       };
     } catch (error) {
       const r2Error = R2ErrorHandler.handleError(error);
       return {
         success: false,
-        error: R2ErrorHandler.getUserMessage(r2Error)
+        error: R2ErrorHandler.getUserMessage(r2Error),
       };
     }
   }
@@ -68,8 +70,8 @@ export class R2Storage {
    * Upload video from local file path
    */
   async uploadVideoFromFile(
-    videoId: string, 
-    localFilePath: string, 
+    videoId: string,
+    localFilePath: string,
     metadata: VideoMetadata
   ): Promise<{ success: boolean; r2Path?: string; error?: string }> {
     try {
@@ -78,7 +80,7 @@ export class R2Storage {
     } catch (error) {
       return {
         success: false,
-        error: `Failed to read local file: ${error}`
+        error: `Failed to read local file: ${error}`,
       };
     }
   }
@@ -86,7 +88,9 @@ export class R2Storage {
   /**
    * Download video from R2 storage
    */
-  async downloadVideo(videoId: string): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
+  async downloadVideo(
+    videoId: string
+  ): Promise<{ success: boolean; buffer?: Buffer; error?: string }> {
     try {
       // Try different possible file extensions
       const extensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
@@ -95,11 +99,11 @@ export class R2Storage {
       for (const ext of extensions) {
         try {
           const r2Path = `videos/${videoId}/video${ext}`;
-          
+
           const result = await RetryHandler.withRetry(async () => {
             const command = new GetObjectCommand({
               Bucket: this.bucket,
-              Key: r2Path
+              Key: r2Path,
             });
 
             return await this.r2Client.getClient().send(command);
@@ -109,7 +113,7 @@ export class R2Storage {
             videoBuffer = Buffer.from(await result.Body.transformToByteArray());
             break;
           }
-        } catch (error) {
+        } catch {
           // Continue trying other extensions
           continue;
         }
@@ -118,19 +122,19 @@ export class R2Storage {
       if (!videoBuffer) {
         return {
           success: false,
-          error: 'Video not found in R2 storage'
+          error: 'Video not found in R2 storage',
         };
       }
 
       return {
         success: true,
-        buffer: videoBuffer
+        buffer: videoBuffer,
       };
     } catch (error) {
       const r2Error = R2ErrorHandler.handleError(error);
       return {
         success: false,
-        error: R2ErrorHandler.getUserMessage(r2Error)
+        error: R2ErrorHandler.getUserMessage(r2Error),
       };
     }
   }
@@ -138,12 +142,12 @@ export class R2Storage {
   /**
    * Get video stream from R2 (for efficient serving)
    */
-  async getVideoStream(videoId: string): Promise<{ 
-    success: boolean; 
-    stream?: Readable; 
+  async getVideoStream(videoId: string): Promise<{
+    success: boolean;
+    stream?: Readable;
     contentLength?: number;
     contentType?: string;
-    error?: string 
+    error?: string;
   }> {
     try {
       // Try different possible file extensions
@@ -152,11 +156,11 @@ export class R2Storage {
       for (const ext of extensions) {
         try {
           const r2Path = `videos/${videoId}/video${ext}`;
-          
+
           const result = await RetryHandler.withRetry(async () => {
             const command = new GetObjectCommand({
               Bucket: this.bucket,
-              Key: r2Path
+              Key: r2Path,
             });
 
             return await this.r2Client.getClient().send(command);
@@ -167,10 +171,10 @@ export class R2Storage {
               success: true,
               stream: result.Body as Readable,
               contentLength: result.ContentLength,
-              contentType: result.ContentType || getVideoContentTypeByExt(ext)
+              contentType: result.ContentType || getVideoContentTypeByExt(ext),
             };
           }
-        } catch (error) {
+        } catch {
           // Continue trying other extensions
           continue;
         }
@@ -178,13 +182,13 @@ export class R2Storage {
 
       return {
         success: false,
-        error: 'Video not found in R2 storage'
+        error: 'Video not found in R2 storage',
       };
     } catch (error) {
       const r2Error = R2ErrorHandler.handleError(error);
       return {
         success: false,
-        error: R2ErrorHandler.getUserMessage(r2Error)
+        error: R2ErrorHandler.getUserMessage(r2Error),
       };
     }
   }
@@ -192,18 +196,20 @@ export class R2Storage {
   /**
    * Check if video exists in R2 storage
    */
-  async videoExists(videoId: string): Promise<{ exists: boolean; r2Path?: string; error?: string }> {
+  async videoExists(
+    videoId: string
+  ): Promise<{ exists: boolean; r2Path?: string; error?: string }> {
     try {
       const extensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
 
       for (const ext of extensions) {
         try {
           const r2Path = `videos/${videoId}/video${ext}`;
-          
+
           await RetryHandler.withRetry(async () => {
             const command = new HeadObjectCommand({
               Bucket: this.bucket,
-              Key: r2Path
+              Key: r2Path,
             });
 
             return await this.r2Client.getClient().send(command);
@@ -211,9 +217,9 @@ export class R2Storage {
 
           return {
             exists: true,
-            r2Path
+            r2Path,
           };
-        } catch (error) {
+        } catch {
           // Continue trying other extensions
           continue;
         }
@@ -224,7 +230,7 @@ export class R2Storage {
       const r2Error = R2ErrorHandler.handleError(error);
       return {
         exists: false,
-        error: R2ErrorHandler.getUserMessage(r2Error)
+        error: R2ErrorHandler.getUserMessage(r2Error),
       };
     }
   }
@@ -232,7 +238,9 @@ export class R2Storage {
   /**
    * Delete video from R2 storage
    */
-  async deleteVideo(videoId: string): Promise<{ success: boolean; error?: string }> {
+  async deleteVideo(
+    videoId: string
+  ): Promise<{ success: boolean; error?: string }> {
     try {
       const extensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm'];
       let deletedAny = false;
@@ -240,31 +248,31 @@ export class R2Storage {
       for (const ext of extensions) {
         try {
           const r2Path = `videos/${videoId}/video${ext}`;
-          
+
           await RetryHandler.withRetry(async () => {
             const command = new DeleteObjectCommand({
               Bucket: this.bucket,
-              Key: r2Path
+              Key: r2Path,
             });
 
             return await this.r2Client.getClient().send(command);
           });
 
           deletedAny = true;
-        } catch (error) {
+        } catch {
           // Continue trying other extensions
           continue;
         }
       }
 
       return {
-        success: deletedAny
+        success: deletedAny,
       };
     } catch (error) {
       const r2Error = R2ErrorHandler.handleError(error);
       return {
         success: false,
-        error: R2ErrorHandler.getUserMessage(r2Error)
+        error: R2ErrorHandler.getUserMessage(r2Error),
       };
     }
   }
@@ -272,36 +280,36 @@ export class R2Storage {
   /**
    * List all videos in R2 storage
    */
-  async listVideos(prefix: string = 'videos/'): Promise<{ 
-    success: boolean; 
-    videos?: Array<{ key: string; size: number; lastModified: Date }>; 
-    error?: string 
+  async listVideos(prefix: string = 'videos/'): Promise<{
+    success: boolean;
+    videos?: Array<{ key: string; size: number; lastModified: Date }>;
+    error?: string;
   }> {
     try {
       const result = await RetryHandler.withRetry(async () => {
         const command = new ListObjectsV2Command({
           Bucket: this.bucket,
-          Prefix: prefix
+          Prefix: prefix,
         });
 
         return await this.r2Client.getClient().send(command);
       });
 
-      const videos = (result.Contents || []).map(obj => ({
+      const videos = (result.Contents || []).map((obj) => ({
         key: obj.Key!,
         size: obj.Size || 0,
-        lastModified: obj.LastModified || new Date()
+        lastModified: obj.LastModified || new Date(),
       }));
 
       return {
         success: true,
-        videos
+        videos,
       };
     } catch (error) {
       const r2Error = R2ErrorHandler.handleError(error);
       return {
         success: false,
-        error: R2ErrorHandler.getUserMessage(r2Error)
+        error: R2ErrorHandler.getUserMessage(r2Error),
       };
     }
   }
@@ -309,35 +317,38 @@ export class R2Storage {
   /**
    * Get R2 storage usage statistics
    */
-  async getStorageStats(): Promise<{ 
-    success: boolean; 
-    totalSize?: number; 
-    videoCount?: number; 
-    error?: string 
+  async getStorageStats(): Promise<{
+    success: boolean;
+    totalSize?: number;
+    videoCount?: number;
+    error?: string;
   }> {
     try {
       const listResult = await this.listVideos();
-      
+
       if (!listResult.success || !listResult.videos) {
         return {
           success: false,
-          error: listResult.error || 'Failed to list videos'
+          error: listResult.error || 'Failed to list videos',
         };
       }
 
-      const totalSize = listResult.videos.reduce((sum, video) => sum + video.size, 0);
+      const totalSize = listResult.videos.reduce(
+        (sum, video) => sum + video.size,
+        0
+      );
       const videoCount = listResult.videos.length;
 
       return {
         success: true,
         totalSize,
-        videoCount
+        videoCount,
       };
     } catch (error) {
       const r2Error = R2ErrorHandler.handleError(error);
       return {
         success: false,
-        error: R2ErrorHandler.getUserMessage(r2Error)
+        error: R2ErrorHandler.getUserMessage(r2Error),
       };
     }
   }
@@ -349,11 +360,11 @@ export class R2Storage {
     try {
       // Test by listing objects (requires read permission)
       const listResult = await this.listVideos();
-      
+
       if (!listResult.success) {
         return {
           success: false,
-          error: listResult.error || 'Failed to connect to R2'
+          error: listResult.error || 'Failed to connect to R2',
         };
       }
 
@@ -362,9 +373,8 @@ export class R2Storage {
       const r2Error = R2ErrorHandler.handleError(error);
       return {
         success: false,
-        error: R2ErrorHandler.getUserMessage(r2Error)
+        error: R2ErrorHandler.getUserMessage(r2Error),
       };
     }
   }
-
 }

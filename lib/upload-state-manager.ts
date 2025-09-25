@@ -23,7 +23,15 @@ export class UploadStateManager {
    */
   async saveUploadState(state: UploadState): Promise<void> {
     await this.initialize();
-    
+    const stateFilePath = path.join(this.statePath, `${state.uploadId}.json`);
+
+    // Preserve existing fields if a state file already exists (e.g., completedChunks, chunkChecksums, lastError)
+    let previous: Partial<UploadStateFile> | null = null;
+    try {
+      const prevData = await fs.readFile(stateFilePath, 'utf-8');
+      previous = JSON.parse(prevData);
+    } catch {}
+
     const stateFile: UploadStateFile = {
       uploadId: state.uploadId,
       videoId: state.videoId,
@@ -37,11 +45,19 @@ export class UploadStateManager {
         uploadedSize: state.uploadedSize,
         chunkSize: state.chunkSize,
         lastChunkIndex: state.lastChunkIndex,
-        completedChunks: [], // Will be populated by chunked upload handler
+        completedChunks:
+          (previous &&
+            previous.progress &&
+            previous.progress.completedChunks) ||
+          [],
       },
       integrity: {
         expectedChecksum: state.checksumMD5,
-        chunkChecksums: {},
+        chunkChecksums:
+          (previous &&
+            previous.integrity &&
+            previous.integrity.chunkChecksums) ||
+          {},
       },
       timing: {
         startTime: state.startTime,
@@ -51,10 +67,12 @@ export class UploadStateManager {
         current: state.status,
         retryCount: state.retryCount,
         maxRetries: state.maxRetries,
+        lastError:
+          (previous && previous.status && previous.status.lastError) ||
+          undefined,
       },
     };
 
-    const stateFilePath = path.join(this.statePath, `${state.uploadId}.json`);
     await fs.writeFile(stateFilePath, JSON.stringify(stateFile, null, 2));
   }
 
@@ -95,7 +113,10 @@ export class UploadStateManager {
   /**
    * Update upload progress
    */
-  async updateUploadProgress(uploadId: string, uploadedSize: number): Promise<void> {
+  async updateUploadProgress(
+    uploadId: string,
+    uploadedSize: number
+  ): Promise<void> {
     const state = await this.loadUploadState(uploadId);
     if (!state) {
       throw new Error(`Upload state not found for ID: ${uploadId}`);
@@ -103,7 +124,7 @@ export class UploadStateManager {
 
     state.uploadedSize = uploadedSize;
     state.lastActivity = new Date();
-    
+
     await this.saveUploadState(state);
   }
 
@@ -111,40 +132,34 @@ export class UploadStateManager {
    * Mark upload as completed
    */
   async markUploadComplete(uploadId: string): Promise<void> {
-    const state = await this.loadUploadState(uploadId);
-    if (!state) {
+    const stateFilePath = path.join(this.statePath, `${uploadId}.json`);
+    try {
+      const data = await fs.readFile(stateFilePath, 'utf-8');
+      const stateFile: UploadStateFile = JSON.parse(data);
+      stateFile.status.current = 'completed';
+      stateFile.timing.lastActivity = new Date();
+      await fs.writeFile(stateFilePath, JSON.stringify(stateFile, null, 2));
+    } catch {
       throw new Error(`Upload state not found for ID: ${uploadId}`);
     }
-
-    state.status = 'completed';
-    state.lastActivity = new Date();
-    
-    await this.saveUploadState(state);
   }
 
   /**
    * Mark upload as failed
    */
   async markUploadFailed(uploadId: string, error: string): Promise<void> {
-    const state = await this.loadUploadState(uploadId);
-    if (!state) {
+    const stateFilePath = path.join(this.statePath, `${uploadId}.json`);
+    try {
+      const data = await fs.readFile(stateFilePath, 'utf-8');
+      const stateFile: UploadStateFile = JSON.parse(data);
+      stateFile.status.current = 'failed';
+      stateFile.status.retryCount = (stateFile.status.retryCount || 0) + 1;
+      stateFile.status.lastError = error;
+      stateFile.timing.lastActivity = new Date();
+      await fs.writeFile(stateFilePath, JSON.stringify(stateFile, null, 2));
+    } catch {
       throw new Error(`Upload state not found for ID: ${uploadId}`);
     }
-
-    state.status = 'failed';
-    state.retryCount += 1;
-    state.lastActivity = new Date();
-    
-    // Persist the updated state and error information to disk
-    const stateFilePath = path.join(this.statePath, `${uploadId}.json`);
-    const data = await fs.readFile(stateFilePath, 'utf-8');
-    const stateFile: UploadStateFile = JSON.parse(data);
-    stateFile.status.current = 'failed';
-    stateFile.status.retryCount = (stateFile.status.retryCount || 0) + 1;
-    stateFile.status.lastError = error;
-    stateFile.timing.lastActivity = new Date();
-    
-    await fs.writeFile(stateFilePath, JSON.stringify(stateFile, null, 2));
   }
 
   /**
@@ -166,11 +181,16 @@ export class UploadStateManager {
           const stateFile: UploadStateFile = JSON.parse(data);
           const lastActivity = new Date(stateFile.timing.lastActivity);
 
-          if (lastActivity < cutoffTime && 
-              (stateFile.status.current === 'completed' || stateFile.status.current === 'failed')) {
+          if (
+            lastActivity < cutoffTime &&
+            (stateFile.status.current === 'completed' ||
+              stateFile.status.current === 'failed')
+          ) {
             await fs.unlink(filePath);
             cleanedCount++;
-            console.log(`Cleaned up expired upload state: ${stateFile.uploadId}`);
+            console.log(
+              `Cleaned up expired upload state: ${stateFile.uploadId}`
+            );
           }
         } catch (error) {
           console.warn(`Failed to process state file ${file}:`, error);
@@ -198,7 +218,7 @@ export class UploadStateManager {
 
         const uploadId = file.replace('.json', '');
         const state = await this.loadUploadState(uploadId);
-        
+
         if (state && state.status === 'active') {
           activeUploads.push(state);
         }
