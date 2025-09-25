@@ -9,6 +9,11 @@ on:
 env:
   NODE_VERSION: '20'
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 jobs:
   security-audit:
     name: 🔒 Security Audit
