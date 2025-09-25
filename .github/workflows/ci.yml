@@ -68,10 +68,11 @@ jobs:
       # FAIL on any TypeScript errors
 
     - name: 🧪 Run tests (STRICT)
-      run: npm test -- --coverage --watchAll=false --passWithNoTests --coverageThreshold='{"global":{"branches":50,"functions":50,"lines":50,"statements":50}}'
+      run: npm test -- --ci --coverage --coverageThreshold='{"global":{"branches":50,"functions":50,"lines":50,"statements":50}}'
       env:
         NODE_ENV: test
-      # FAIL if coverage below 50%
+        CI: true
+      # FAIL if coverage below 50% or if no tests exist
 
     - name: 📊 Upload coverage reports
       uses: codecov/codecov-action@v3

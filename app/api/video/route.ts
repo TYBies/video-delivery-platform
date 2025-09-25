@@ -7,6 +7,7 @@ import {
   GetObjectCommand,
   ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
+import type { VideoMetadata } from '@/types';
 
 export async function GET() {
   try {
@@ -40,7 +41,10 @@ export async function GET() {
       });
 
       // First try to get existing metadata index
-      let existingVideos: any[] = [];
+      type CloudVideoMetadata = Omit<VideoMetadata, 'uploadDate'> & {
+        uploadDate: string;
+      };
+      let existingVideos: CloudVideoMetadata[] = [];
       try {
         const res = await client.send(
           new GetObjectCommand({
@@ -48,8 +52,10 @@ export async function GET() {
             Key: 'metadata/videos-index.json',
           })
         );
-        const text = await (res.Body as any).transformToString();
-        const index = JSON.parse(text);
+        const text = await (
+          res.Body as unknown as { transformToString: () => Promise<string> }
+        ).transformToString();
+        const index = JSON.parse(text) as { videos?: CloudVideoMetadata[] };
         existingVideos = index.videos || [];
       } catch {
         // Index doesn't exist, that's okay - we'll discover videos from bucket
@@ -222,7 +228,12 @@ export async function GET() {
       console.log(`Video IDs: ${Array.from(allVideoIds).join(', ')}`);
 
       // Create a map of video files by their derived IDs for easy lookup
-      const videoFileMap = new Map<string, any>();
+      type S3ListedObject = {
+        Key?: string;
+        LastModified?: Date;
+        Size?: number;
+      };
+      const videoFileMap = new Map<string, S3ListedObject>();
       allVideoFiles.forEach((file) => {
         const key = file.Key || '';
         const pathParts = key.split('/');
@@ -274,7 +285,7 @@ export async function GET() {
       });
 
       // For each discovered video ID, check if we have metadata or create basic metadata
-      const allVideos = [];
+      const allVideos: CloudVideoMetadata[] = [];
       for (const videoId of Array.from(allVideoIds)) {
         // Check if we already have metadata for this video
         const existingVideo = existingVideos.find((v) => v.id === videoId);
@@ -290,7 +301,7 @@ export async function GET() {
             const filename = videoFile.Key.split('/').pop() || 'unknown.mov';
 
             // Create basic metadata for discovered video using data from ListObjectsV2Command
-            const basicMetadata = {
+            const basicMetadata: CloudVideoMetadata = {
               id: videoId,
               filename: filename,
               clientName: 'Unknown Client',
@@ -318,10 +329,16 @@ export async function GET() {
 
       console.log(`Returning ${allVideos.length} total videos`);
 
-      // Cache the results to reduce future B2 API calls
-      metadataCache.setVideoList(allVideos);
+      // Convert uploadDate strings to Date objects for consistency
+      const standardizedVideos: VideoMetadata[] = allVideos.map((v) => ({
+        ...v,
+        uploadDate: new Date(v.uploadDate),
+      }));
 
-      return NextResponse.json(allVideos);
+      // Cache the results to reduce future B2 API calls
+      metadataCache.setVideoList(standardizedVideos);
+
+      return NextResponse.json(standardizedVideos);
     } else {
       const metadataManager = new MetadataManager();
       const videos = await metadataManager.getAllMetadata();

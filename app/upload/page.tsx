@@ -11,9 +11,29 @@ export default function UploadPage() {
   const [clientName, setClientName] = useState('');
   const [projectName, setProjectName] = useState('');
   const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  type UploadResult = {
+    videoId: string;
+    downloadUrl?: string;
+    metadata: {
+      clientName: string;
+      projectName: string;
+      fileSize: number;
+      status: 'local' | 'backed-up' | 'cloud-only';
+    };
+    compression?: {
+      compressionRatio: number;
+      originalSize: number;
+      compressedSize: number;
+    };
+  } | null;
+  const [result, setResult] = useState<UploadResult>(null);
   const [error, setError] = useState('');
-  const [diskSpace, setDiskSpace] = useState<any>(null);
+  type DiskSpaceResponse = {
+    success: boolean;
+    diskSpace: { available: string; percentUsed: number };
+    warning?: string;
+  } | null;
+  const [diskSpace, setDiskSpace] = useState<DiskSpaceResponse>(null);
   const [uploadProgress, setUploadProgress] = useState<string>('');
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [uploadSpeed, setUploadSpeed] = useState<string>('');
@@ -611,7 +631,7 @@ export default function UploadPage() {
               ? `${Math.round((result.metadata.fileSize / 1024 / 1024 / 1024) * 100) / 100} GB`
               : `${Math.round((result.metadata.fileSize / 1024 / 1024) * 100) / 100} MB`}
           </p>
-          {result.compression?.enabled && (
+          {result.compression && (
             <p>
               <strong>Compression:</strong>{' '}
               {result.compression.compressionRatio.toFixed(1)}% size reduction (

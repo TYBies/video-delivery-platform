@@ -10,7 +10,13 @@ describe('OrphanRecoveryService', () => {
 
   beforeEach(async () => {
     testStoragePath = path.join(__dirname, 'test-recovery');
-    service = new OrphanRecoveryService(testStoragePath);
+    // Provide a silent logger for testing to prevent console output
+    const silentLogger = {
+      log: () => {},
+      error: () => {},
+      warn: () => {},
+    };
+    service = new OrphanRecoveryService(testStoragePath, silentLogger);
     await service.initialize();
   });
 

@@ -7,6 +7,7 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import fs from 'fs';
+import type { VideoMetadata } from '@/types';
 
 export async function GET(
   request: NextRequest,
@@ -16,7 +17,13 @@ export async function GET(
     const { videoId } = params;
 
     // First try to get metadata from cloud if S3 is enabled
-    let metadata: any = null;
+    type BasicMeta = Pick<VideoMetadata, 'filename' | 'fileSize'> & {
+      status?: 'local' | 'backed-up' | 'cloud-only';
+      r2Path?: string;
+      localPath?: string;
+      downloadCount?: number;
+    };
+    let metadata: BasicMeta | null = null;
 
     if (isS3Enabled()) {
       const cfg = loadS3Config();
@@ -38,9 +45,11 @@ export async function GET(
           })
         );
         const metadataText = await (
-          metadataResponse.Body as any
+          metadataResponse.Body as unknown as {
+            transformToString: () => Promise<string>;
+          }
         ).transformToString();
-        metadata = JSON.parse(metadataText);
+        metadata = JSON.parse(metadataText) as BasicMeta;
 
         // For cloud-only videos, stream directly from cloud
         if (metadata.status === 'cloud-only' && metadata.r2Path) {
@@ -74,7 +83,18 @@ export async function GET(
             })
           );
 
-          return new NextResponse(videoResponse.Body as any, {
+          const body = videoResponse.Body as unknown as
+            | ReadableStream
+            | { transformToWebStream?: () => ReadableStream };
+          const hasTransform =
+            typeof (body as { transformToWebStream?: unknown })
+              .transformToWebStream === 'function';
+          const webBody = hasTransform
+            ? (
+                body as { transformToWebStream: () => ReadableStream }
+              ).transformToWebStream()
+            : (body as ReadableStream);
+          return new NextResponse(webBody, {
             status: 200,
             headers,
           });
@@ -139,13 +159,13 @@ export async function GET(
       headers.set('Content-Range', `bytes ${start}-${end}/${fileSize}`);
       headers.set('Content-Length', chunkSize.toString());
 
-      return new NextResponse(rangeStream as any, {
+      return new NextResponse(rangeStream as unknown as ReadableStream, {
         status: 206,
         headers,
       });
     }
 
-    return new NextResponse(stream as any, {
+    return new NextResponse(stream as unknown as ReadableStream, {
       status: 200,
       headers,
     });

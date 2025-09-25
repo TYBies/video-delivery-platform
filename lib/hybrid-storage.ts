@@ -361,7 +361,10 @@ export class HybridStorage {
     local: { success: boolean; error?: string };
     r2?: { success: boolean; error?: string };
   }> {
-    const results: any = {
+    const results: {
+      local: { success: boolean; error?: string };
+      r2?: { success: boolean; error?: string };
+    } = {
       local: { success: false },
     };
 

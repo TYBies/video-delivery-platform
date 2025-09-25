@@ -5,10 +5,23 @@ import { OrphanFile, OrphanRegistry, VideoMetadata } from '../types';
 import { MetadataManager } from './metadata';
 import crypto from 'crypto';
 
+interface Logger {
+  log(message: string, ...args: unknown[]): void;
+  error(message: string, ...args: unknown[]): void;
+  warn(message: string, ...args: unknown[]): void;
+}
+
+const defaultLogger: Logger = {
+  log: console.log.bind(console),
+  error: console.error.bind(console),
+  warn: console.warn.bind(console),
+};
+
 export class OrphanRecoveryService {
   private storagePath: string;
   private recoveryPath: string;
   private metadataManager: MetadataManager;
+  private logger: Logger;
   private readonly validExtensions = [
     '.mp4',
     '.mov',
@@ -18,10 +31,11 @@ export class OrphanRecoveryService {
     '.m4v',
   ];
 
-  constructor(storagePath?: string) {
+  constructor(storagePath?: string, logger?: Logger) {
     this.storagePath = storagePath || process.env.STORAGE_PATH || './uploads';
     this.recoveryPath = path.join(this.storagePath, 'recovery');
     this.metadataManager = new MetadataManager(storagePath);
+    this.logger = logger || defaultLogger;
   }
 
   /**
@@ -86,15 +100,15 @@ export class OrphanRecoveryService {
               });
             }
           } catch (error) {
-            console.warn(`Failed to scan directory ${folder}:`, error);
+            this.logger.warn(`Failed to scan directory ${folder}:`, error);
           }
         }
       }
 
-      console.log(`Found ${orphans.length} orphaned video files`);
+      this.logger.log(`Found ${orphans.length} orphaned video files`);
       return orphans;
     } catch (error) {
-      console.error('Failed to scan for orphans:', error);
+      this.logger.error('Failed to scan for orphans:', error);
       return [];
     }
   }
@@ -104,12 +118,12 @@ export class OrphanRecoveryService {
    */
   async recoverOrphan(orphan: OrphanFile): Promise<VideoMetadata | null> {
     try {
-      console.log(`Attempting to recover orphan: ${orphan.path}`);
+      this.logger.log(`Attempting to recover orphan: ${orphan.path}`);
 
       // Validate the file first
       const isValid = await this.validateOrphanFile(orphan);
       if (!isValid) {
-        console.warn(`Orphan file validation failed: ${orphan.path}`);
+        this.logger.warn(`Orphan file validation failed: ${orphan.path}`);
         await this.updateOrphanRegistry(orphan.videoId, 'invalid');
         return null;
       }
@@ -117,7 +131,7 @@ export class OrphanRecoveryService {
       // Reconstruct metadata
       const metadata = await this.reconstructMetadata(orphan);
       if (!metadata) {
-        console.warn(`Failed to reconstruct metadata for: ${orphan.path}`);
+        this.logger.warn(`Failed to reconstruct metadata for: ${orphan.path}`);
         await this.updateOrphanRegistry(orphan.videoId, 'failed');
         return null;
       }
@@ -125,12 +139,12 @@ export class OrphanRecoveryService {
       // Save the reconstructed metadata
       await this.metadataManager.saveMetadata(metadata);
 
-      console.log(`Successfully recovered orphan: ${orphan.videoId}`);
+      this.logger.log(`Successfully recovered orphan: ${orphan.videoId}`);
       await this.updateOrphanRegistry(orphan.videoId, 'recovered', metadata);
 
       return metadata;
     } catch (error) {
-      console.error(`Failed to recover orphan ${orphan.videoId}:`, error);
+      this.logger.error(`Failed to recover orphan ${orphan.videoId}:`, error);
       await this.updateOrphanRegistry(orphan.videoId, 'failed');
       return null;
     }
@@ -177,7 +191,7 @@ export class OrphanRecoveryService {
 
       return metadata;
     } catch (error) {
-      console.error(
+      this.logger.error(
         `Failed to reconstruct metadata for ${orphan.path}:`,
         error
       );
@@ -209,7 +223,10 @@ export class OrphanRecoveryService {
 
       return true;
     } catch (error) {
-      console.error(`Failed to validate orphan file ${orphan.path}:`, error);
+      this.logger.error(
+        `Failed to validate orphan file ${orphan.path}:`,
+        error
+      );
       return false;
     }
   }
@@ -276,7 +293,7 @@ export class OrphanRecoveryService {
         }
       }
     } catch (e) {
-      console.error('Failed to scan for orphans:', e);
+      this.logger.error('Failed to scan for orphans:', e);
     }
 
     return cleanedCount;
@@ -316,7 +333,7 @@ export class OrphanRecoveryService {
     try {
       await fs.rmdir(path.dirname(orphan.path));
     } catch {}
-    console.log(`Moved invalid orphan to cleanup: ${orphan.path}`);
+    this.logger.log(`Moved invalid orphan to cleanup: ${orphan.path}`);
   }
 
   /**
@@ -403,7 +420,7 @@ export class OrphanRecoveryService {
     let recovered = 0;
     let failed = 0;
 
-    console.log(`Starting recovery of ${orphans.length} orphaned files`);
+    this.logger.log(`Starting recovery of ${orphans.length} orphaned files`);
 
     for (const orphan of orphans) {
       const result = await this.recoverOrphan(orphan);
@@ -442,10 +459,12 @@ export class OrphanRecoveryService {
         }
       }
     } catch (e) {
-      console.error('Failed to scan for orphans:', e);
+      this.logger.error('Failed to scan for orphans:', e);
     }
 
-    console.log(`Recovery complete: ${recovered} recovered, ${failed} failed`);
+    this.logger.log(
+      `Recovery complete: ${recovered} recovered, ${failed} failed`
+    );
     return { recovered, failed };
   }
 }

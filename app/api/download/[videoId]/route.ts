@@ -23,9 +23,7 @@ export async function GET(
     if (isS3Enabled()) {
       const url = new URL(request.url);
       const metadataManager = new MetadataManager();
-      const meta = await metadataManager
-        .loadMetadata(videoId)
-        .catch(() => null as any);
+      const meta = await metadataManager.loadMetadata(videoId);
 
       if (!meta) {
         return NextResponse.json(
@@ -82,7 +80,16 @@ export async function GET(
         `attachment; filename="${meta?.filename || `video${ext}`}"`
       );
 
-      const webStream = (s3Obj.Body as any).transformToWebStream();
+      const body = s3Obj.Body as unknown as {
+        transformToWebStream?: () => ReadableStream;
+      };
+      const webStream = body?.transformToWebStream?.();
+      if (!webStream) {
+        return NextResponse.json(
+          { error: 'Unable to stream from cloud body' },
+          { status: 500 }
+        );
+      }
       return new NextResponse(webStream, { status: 200, headers });
     }
 

@@ -10,6 +10,7 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { NextRequest, NextResponse } from 'next/server';
+import type { VideoMetadata } from '@/types';
 
 export async function GET(
   request: NextRequest,
@@ -42,7 +43,9 @@ export async function GET(
             Key: `videos/${videoId}/metadata.json`,
           })
         );
-        const text = await (res.Body as any).transformToString();
+        const text = await (
+          res.Body as unknown as { transformToString: () => Promise<string> }
+        ).transformToString();
         return NextResponse.json(JSON.parse(text));
       } catch {
         return NextResponse.json(
@@ -107,7 +110,11 @@ export async function DELETE(
         const metaRes = await client.send(
           new GetObjectCommand({ Bucket: cfg.bucket, Key: metaKey })
         );
-        const metaText = await (metaRes.Body as any).transformToString();
+        const metaText = await (
+          metaRes.Body as unknown as {
+            transformToString: () => Promise<string>;
+          }
+        ).transformToString();
         const metadata = JSON.parse(metaText);
 
         // Use the r2Path from metadata if available, otherwise construct likely path
@@ -251,10 +258,15 @@ export async function DELETE(
         const res = await client.send(
           new GetObjectCommand({ Bucket: cfg.bucket, Key: idxKey })
         );
-        const text = await (res.Body as any).transformToString();
-        const idx = JSON.parse(text);
+        const text = await (
+          res.Body as unknown as { transformToString: () => Promise<string> }
+        ).transformToString();
+        type CloudVideoMetadata = Omit<VideoMetadata, 'uploadDate'> & {
+          uploadDate: string;
+        };
+        const idx = JSON.parse(text) as { videos?: CloudVideoMetadata[] };
         const originalCount = idx.videos ? idx.videos.length : 0;
-        idx.videos = (idx.videos || []).filter((v: any) => v.id !== videoId);
+        idx.videos = (idx.videos || []).filter((v) => v.id !== videoId);
         const newCount = idx.videos.length;
         await client.send(
           new PutObjectCommand({

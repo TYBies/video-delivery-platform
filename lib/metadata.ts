@@ -152,7 +152,7 @@ export class MetadataManager {
       const index = JSON.parse(indexData);
 
       // Convert date strings back to Date objects
-      return index.videos.map((video: any) => ({
+      return (index.videos as VideoMetadata[]).map((video) => ({
         ...video,
         uploadDate: new Date(video.uploadDate),
       }));
@@ -231,7 +231,7 @@ export class MetadataManager {
   /**
    * Validate metadata structure
    */
-  validateMetadata(metadata: any): { valid: boolean; errors: string[] } {
+  validateMetadata(metadata: unknown): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
     const required = [
       'id',
@@ -242,23 +242,40 @@ export class MetadataManager {
       'fileSize',
     ];
 
+    // Type guard to check if metadata is an object
+    if (!metadata || typeof metadata !== 'object') {
+      errors.push('Metadata must be an object');
+      return { valid: false, errors };
+    }
+
+    const metadataObj = metadata as Partial<VideoMetadata> &
+      Record<string, unknown>;
+
     for (const field of required) {
-      if (!metadata[field]) {
+      if (!(field in metadataObj)) {
         errors.push(`Missing required field: ${field}`);
       }
     }
 
-    if (metadata.fileSize && typeof metadata.fileSize !== 'number') {
+    if (
+      metadataObj.fileSize !== undefined &&
+      typeof metadataObj.fileSize !== 'number'
+    ) {
       errors.push('fileSize must be a number');
     }
 
-    if (metadata.downloadCount && typeof metadata.downloadCount !== 'number') {
+    if (
+      metadataObj.downloadCount !== undefined &&
+      typeof metadataObj.downloadCount !== 'number'
+    ) {
       errors.push('downloadCount must be a number');
     }
 
     if (
-      metadata.status &&
-      !['local', 'backed-up', 'cloud-only'].includes(metadata.status)
+      metadataObj.status !== undefined &&
+      !['local', 'backed-up', 'cloud-only'].includes(
+        metadataObj.status as string
+      )
     ) {
       errors.push('status must be one of: local, backed-up, cloud-only');
     }

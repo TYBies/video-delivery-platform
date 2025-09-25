@@ -37,7 +37,7 @@ const mockS3Client = S3Client as jest.MockedClass<typeof S3Client>;
 const mockIsS3Enabled = isS3Enabled as jest.MockedFunction<typeof isS3Enabled>;
 
 describe('API Error Handling Integration Tests', () => {
-  let mockS3Send: jest.MockedFunction<any>;
+  let mockS3Send: jest.MockedFunction<(command: unknown) => Promise<unknown>>;
   let consoleSpy: jest.SpyInstance;
 
   beforeEach(() => {
@@ -58,7 +58,7 @@ describe('API Error Handling Integration Tests', () => {
       () =>
         ({
           send: mockS3Send,
-        }) as any
+        }) as { send: typeof mockS3Send }
     );
 
     mockIsS3Enabled.mockReturnValue(true);
@@ -209,7 +209,15 @@ describe('API Error Handling Integration Tests', () => {
 
       // Verify the response was cached
       const cachedData = metadataCache.getVideoList();
-      expect(cachedData).toEqual(data);
+      // Convert cached Date objects to strings to match API response format
+      const serializedCachedData = cachedData?.map((video) => ({
+        ...video,
+        uploadDate:
+          video.uploadDate instanceof Date
+            ? video.uploadDate.toISOString()
+            : video.uploadDate,
+      }));
+      expect(serializedCachedData).toEqual(data);
     });
   });
 
