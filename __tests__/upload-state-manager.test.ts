@@ -158,6 +158,42 @@ describe('UploadStateManager', () => {
     });
   });
 
+  describe('saveUploadState preservation', () => {
+    it('should preserve completedChunks, chunkChecksums, and lastError on subsequent saves', async () => {
+      const state = createTestUploadState();
+      await manager.saveUploadState(state);
+
+      // Manually enrich the persisted state with fields that might be added by other processes
+      const stateFilePath = manager.getStateFilePath(state.uploadId);
+      const raw = await fs.readFile(stateFilePath, 'utf-8');
+      const fileJson = JSON.parse(raw);
+      fileJson.progress.completedChunks = [1, 2, 5];
+      fileJson.integrity.chunkChecksums = { '1': 'aaa', '2': 'bbb' };
+      fileJson.status.lastError = 'previous error';
+      await fs.writeFile(stateFilePath, JSON.stringify(fileJson, null, 2));
+
+      // Now update the state (e.g., progress) and save again
+      const updated: UploadState = {
+        ...state,
+        uploadedSize: state.uploadedSize + 1024,
+        lastActivity: new Date(),
+      };
+      await manager.saveUploadState(updated);
+
+      // Load raw file to verify preserved fields
+      const rawAfter = await fs.readFile(stateFilePath, 'utf-8');
+      const jsonAfter = JSON.parse(rawAfter);
+
+      expect(jsonAfter.progress.completedChunks).toEqual([1, 2, 5]);
+      expect(jsonAfter.integrity.chunkChecksums).toEqual({
+        '1': 'aaa',
+        '2': 'bbb',
+      });
+      expect(jsonAfter.status.lastError).toBe('previous error');
+      expect(jsonAfter.progress.uploadedSize).toBe(updated.uploadedSize);
+    });
+  });
+
   describe('cleanupExpiredUploads', () => {
     it('should clean up expired completed uploads', async () => {
       const oldState = createTestUploadState();

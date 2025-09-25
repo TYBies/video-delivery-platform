@@ -135,6 +135,7 @@ jobs:
       # FAIL on any security vulnerabilities found
 
     - name: 🔒 Dependency Review (STRICT)
+      if: github.event_name == 'pull_request'
       uses: actions/dependency-review-action@v4
       with:
         fail-on-severity: high
