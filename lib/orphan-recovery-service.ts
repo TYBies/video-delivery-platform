@@ -191,7 +191,8 @@ export class OrphanRecoveryService {
   async validateOrphanFile(orphan: OrphanFile): Promise<boolean> {
     try {
       // Check if file exists and is readable
-      await fs.access(orphan.path, fs.constants.R_OK);
+      // Note: fs.promises doesn't expose constants; use fsSync.constants
+      await fs.access(orphan.path, fsSync.constants.R_OK);
 
       // Check file size is reasonable (not empty, not too small)
       const stats = await fs.stat(orphan.path);

@@ -105,7 +105,7 @@ export async function GET(
     }
 
     // Get video stream from cloud storage
-    const { stream, size, filename } =
+    const { stream, size, filename, source } =
       await hybridStorage.getVideoStream(videoId);
 
     // Set appropriate headers
@@ -116,8 +116,13 @@ export async function GET(
       'Content-Disposition',
       `attachment; filename="${metadata.filename}"`
     );
-    headers.set('Cache-Control', 'public, max-age=31536000'); // 1 year cache
-    headers.set('X-Video-Source', 'cloud'); // Cloud-only source
+    // Prefer long cache for cloud (R2), avoid caching local responses
+    if (source === 'r2') {
+      headers.set('Cache-Control', 'public, max-age=31536000'); // 1 year cache
+    } else {
+      headers.set('Cache-Control', 'no-store');
+    }
+    headers.set('X-Video-Source', source);
 
     // Create readable stream for the response
     const readableStream = new ReadableStream({
