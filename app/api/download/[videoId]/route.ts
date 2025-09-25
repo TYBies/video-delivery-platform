@@ -4,6 +4,7 @@ import { MetadataManager } from '@/lib/metadata';
 import { isS3Enabled, loadS3Config } from '@/lib/s3-config';
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getFileExtension, getVideoContentTypeByExt } from '@/lib/mime';
+import { downloadLinkManager } from '@/lib/download-link-manager';
 
 export async function GET(
   request: NextRequest,
@@ -40,10 +41,23 @@ export async function GET(
       }
 
       if (url.searchParams.get('presigned') === '1') {
-        // Redirect to presigned GET to bypass serverless for large files
-        const { presignS3GetUrl } = await import('@/lib/s3-presign-get');
-        const signed = presignS3GetUrl(key, 900);
-        return NextResponse.redirect(signed, { status: 302 });
+        // Use cached download link manager for B2 quota optimization
+        try {
+          const linkData = await downloadLinkManager.getDownloadLink(videoId);
+          console.log(
+            `Download link ${linkData.isFromCache ? 'retrieved from cache' : 'generated'} for video ${videoId} (access count: ${linkData.accessCount})`
+          );
+          return NextResponse.redirect(linkData.url, { status: 302 });
+        } catch (error) {
+          console.error(
+            'Failed to get cached download link, falling back to direct generation:',
+            error
+          );
+          // Fallback to direct presigned URL generation
+          const { presignS3GetUrl } = await import('@/lib/s3-presign-get');
+          const signed = presignS3GetUrl(key, 900);
+          return NextResponse.redirect(signed, { status: 302 });
+        }
       }
 
       const cfg = loadS3Config();

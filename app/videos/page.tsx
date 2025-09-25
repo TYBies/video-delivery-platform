@@ -26,6 +26,8 @@ export default function VideosPage() {
   } | null;
   const [health, setHealth] = useState<SystemHealth>(null);
   const [running, setRunning] = useState<boolean>(false);
+  const [copiedId, setCopiedId] = useState<string>('');
+  const [linkLoading, setLinkLoading] = useState<string>('');
 
   const loadVideos = async () => {
     setLoading(true);
@@ -149,6 +151,42 @@ export default function VideosPage() {
     return `${Math.round((bytes / 1024 / 1024) * 100) / 100} MB`;
   };
 
+  const copyDownloadLink = async (videoId: string) => {
+    setLinkLoading(videoId);
+    try {
+      const response = await fetch(`/api/download-link/${videoId}`, {
+        cache: 'no-store',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get download link');
+      }
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || 'Failed to get download link');
+      }
+
+      // Copy the direct download URL to clipboard
+      const downloadUrl = `${window.location.origin}/api/download/${videoId}?presigned=1`;
+      await navigator.clipboard.writeText(downloadUrl);
+
+      setCopiedId(videoId);
+      setTimeout(() => setCopiedId(''), 2000);
+
+      console.log(
+        `Download link copied (${data.isFromCache ? 'cached' : 'new'}). Access count: ${data.accessCount}`
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to copy link';
+      alert(`Failed to copy download link: ${message}`);
+    } finally {
+      setLinkLoading('');
+    }
+  };
+
   return (
     <main style={{ maxWidth: '900px', margin: '0 auto', padding: '20px' }}>
       <h1>Videos</h1>
@@ -253,7 +291,7 @@ export default function VideosPage() {
             </div>
             <div
               className="video-actions"
-              style={{ display: 'flex', gap: '8px' }}
+              style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}
             >
               <a
                 href={`/api/download/${v.id}`}
@@ -263,10 +301,30 @@ export default function VideosPage() {
                   color: 'white',
                   borderRadius: 4,
                   textDecoration: 'none',
+                  fontSize: '14px',
                 }}
               >
                 Download
               </a>
+              <button
+                onClick={() => copyDownloadLink(v.id)}
+                disabled={linkLoading === v.id}
+                style={{
+                  padding: '6px 10px',
+                  background: copiedId === v.id ? '#28a745' : '#007bff',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: 4,
+                  fontSize: '14px',
+                  cursor: 'pointer',
+                }}
+              >
+                {linkLoading === v.id
+                  ? '⏳'
+                  : copiedId === v.id
+                    ? '✅ Copied!'
+                    : '🔗 Copy Link'}
+              </button>
               <a
                 href={`/api/video/${v.id}`}
                 target="_blank"
@@ -277,6 +335,7 @@ export default function VideosPage() {
                   color: 'white',
                   borderRadius: 4,
                   textDecoration: 'none',
+                  fontSize: '14px',
                 }}
               >
                 Details
@@ -290,6 +349,7 @@ export default function VideosPage() {
                   color: 'white',
                   border: 'none',
                   borderRadius: 4,
+                  fontSize: '14px',
                 }}
               >
                 {busyId === v.id ? 'Deleting...' : 'Delete'}
