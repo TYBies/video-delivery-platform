@@ -91,6 +91,13 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Generate permanent download link
+  const origin =
+    process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000';
+  const permanentDownloadUrl = `${origin}/api/direct-download/${videoId}`;
+
   const metadata = {
     id: videoId,
     filename,
@@ -101,7 +108,7 @@ export async function POST(req: NextRequest) {
     downloadCount: 0,
     status: 'cloud-only',
     r2Path: key,
-    downloadUrl: `/download/${videoId}`,
+    downloadUrl: permanentDownloadUrl,
     isActive: true,
   };
 

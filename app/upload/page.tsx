@@ -38,6 +38,7 @@ export default function UploadPage() {
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [uploadSpeed, setUploadSpeed] = useState<string>('');
   const [enableCompression, setEnableCompression] = useState<boolean>(false);
+  const [linkCopied, setLinkCopied] = useState<boolean>(false);
   const [compressionQuality, setCompressionQuality] = useState<
     'professional' | 'high' | 'medium' | 'web'
   >('high');
@@ -349,6 +350,21 @@ export default function UploadPage() {
     }
   };
 
+  const copyDownloadLink = async () => {
+    if (!result) return;
+
+    // Generate the permanent download link
+    const downloadUrl = `${window.location.origin}/api/direct-download/${result.videoId}`;
+
+    try {
+      await navigator.clipboard.writeText(downloadUrl);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      alert('Failed to copy link');
+    }
+  };
+
   return (
     <main>
       <div className="card">
@@ -648,12 +664,45 @@ export default function UploadPage() {
           <p>
             <strong>Status:</strong> {result.metadata.status}
           </p>
-          <p>
-            <strong>Download Link:</strong>
-          </p>
-          <a href={`/api/download/${result.videoId}`}>
-            {window.location.origin}/api/download/{result.videoId}
-          </a>
+          <div style={{ marginTop: '20px' }}>
+            <strong>Permanent Download Link:</strong>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                marginTop: '10px',
+                padding: '10px',
+                background: '#f8f9fa',
+                borderRadius: '4px',
+                border: '1px solid #dee2e6',
+              }}
+            >
+              <code style={{ flex: 1, wordBreak: 'break-all' }}>
+                {window.location.origin}/api/direct-download/{result.videoId}
+              </code>
+              <button
+                onClick={copyDownloadLink}
+                style={{
+                  padding: '6px 12px',
+                  background: linkCopied ? '#28a745' : '#25D366',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {linkCopied ? '✅ Copied!' : '💬 Copy for WhatsApp'}
+              </button>
+            </div>
+            <p
+              style={{ marginTop: '10px', fontSize: '14px', color: '#6c757d' }}
+            >
+              ✨ This link is permanent - share it anytime! Your client can
+              click it to download the video directly.
+            </p>
+          </div>
         </div>
       )}
     </main>

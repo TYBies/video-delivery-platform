@@ -162,30 +162,14 @@ export default function VideosPage() {
   const copyDownloadLink = async (videoId: string) => {
     setLinkLoading(videoId);
     try {
-      const response = await fetch(`/api/download-link/${videoId}`, {
-        cache: 'no-store',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to get download link');
-      }
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error || 'Failed to get download link');
-      }
-
-      // Copy the direct download URL to clipboard
-      const downloadUrl = `${window.location.origin}/api/download/${videoId}?presigned=1`;
+      // Use the new direct-download endpoint that forces file download
+      const downloadUrl = `${window.location.origin}/api/direct-download/${videoId}`;
       await navigator.clipboard.writeText(downloadUrl);
 
       setCopiedId(videoId);
       setTimeout(() => setCopiedId(''), 2000);
 
-      console.log(
-        `Download link copied (${data.isFromCache ? 'cached' : 'new'}). Access count: ${data.accessCount}`
-      );
+      console.log(`Direct download link copied for video ${videoId}`);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : 'Failed to copy link';
@@ -319,7 +303,7 @@ export default function VideosPage() {
                 disabled={linkLoading === v.id}
                 style={{
                   padding: '6px 10px',
-                  background: copiedId === v.id ? '#28a745' : '#007bff',
+                  background: copiedId === v.id ? '#28a745' : '#25D366',
                   color: 'white',
                   border: 'none',
                   borderRadius: 4,
@@ -330,8 +314,8 @@ export default function VideosPage() {
                 {linkLoading === v.id
                   ? '⏳'
                   : copiedId === v.id
-                    ? '✅ Copied!'
-                    : '🔗 Copy Link'}
+                    ? '✅ Link Copied!'
+                    : '💬 Copy WhatsApp Link'}
               </button>
               <a
                 href={`/api/video/${v.id}`}
