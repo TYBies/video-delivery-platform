@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isS3Enabled, loadS3Config } from '@/lib/s3-config';
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+} from '@aws-sdk/client-s3';
 import crypto from 'crypto';
+import type { VideoMetadata } from '@/types';
 
 function generateUUID(): string {
   return crypto.randomBytes(16).toString('hex');
@@ -66,18 +71,20 @@ export async function POST(request: NextRequest) {
       endpoint: cfg.endpoint,
       credentials: {
         accessKeyId: cfg.accessKeyId,
-        secretAccessKey: cfg.secretAccessKey
-      }
+        secretAccessKey: cfg.secretAccessKey,
+      },
     });
 
     // Upload to S3
     console.log('Uploading to cloud storage...');
-    await client.send(new PutObjectCommand({
-      Bucket: cfg.bucket,
-      Key: key,
-      Body: buffer,
-      ContentType: 'video/mp4'
-    }));
+    await client.send(
+      new PutObjectCommand({
+        Bucket: cfg.bucket,
+        Key: key,
+        Body: buffer,
+        ContentType: 'video/mp4',
+      })
+    );
     console.log('Upload to cloud successful');
 
     // Create metadata
@@ -92,44 +99,60 @@ export async function POST(request: NextRequest) {
       status: 'cloud-only',
       r2Path: key,
       downloadUrl: `/download/${videoId}`,
-      isActive: true
+      isActive: true,
     };
 
     // Save metadata to cloud
     console.log('Saving metadata...');
     const metadataKey = `videos/${videoId}/metadata.json`;
-    await client.send(new PutObjectCommand({
-      Bucket: cfg.bucket,
-      Key: metadataKey,
-      Body: JSON.stringify(metadata, null, 2),
-      ContentType: 'application/json'
-    }));
+    await client.send(
+      new PutObjectCommand({
+        Bucket: cfg.bucket,
+        Key: metadataKey,
+        Body: JSON.stringify(metadata, null, 2),
+        ContentType: 'application/json',
+      })
+    );
 
     // Update index
     console.log('Updating index...');
-    let index = { videos: [] as any[] };
+    type CloudVideoMetadata = Omit<VideoMetadata, 'uploadDate'> & {
+      uploadDate: string;
+    };
+    let index: { videos: CloudVideoMetadata[] } = { videos: [] };
     try {
-      const indexResponse = await client.send(new GetObjectCommand({
-        Bucket: cfg.bucket,
-        Key: 'metadata/videos-index.json'
-      }));
-      const indexText = await (indexResponse.Body as any).transformToString();
+      const indexResponse = await client.send(
+        new GetObjectCommand({
+          Bucket: cfg.bucket,
+          Key: 'metadata/videos-index.json',
+        })
+      );
+      const indexText = await (
+        indexResponse.Body as unknown as {
+          transformToString: () => Promise<string>;
+        }
+      ).transformToString();
       index = JSON.parse(indexText);
     } catch {
       // Index doesn't exist yet, create new one
     }
 
     // Add this video to index
-    index.videos = (index.videos || []).filter((v: any) => v.id !== videoId);
-    index.videos.push(metadata);
-    index.videos.sort((a: any, b: any) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+    index.videos = (index.videos || []).filter((v) => v.id !== videoId);
+    index.videos.push(metadata as CloudVideoMetadata);
+    index.videos.sort(
+      (a, b) =>
+        new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()
+    );
 
-    await client.send(new PutObjectCommand({
-      Bucket: cfg.bucket,
-      Key: 'metadata/videos-index.json',
-      Body: JSON.stringify(index, null, 2),
-      ContentType: 'application/json'
-    }));
+    await client.send(
+      new PutObjectCommand({
+        Bucket: cfg.bucket,
+        Key: 'metadata/videos-index.json',
+        Body: JSON.stringify(index, null, 2),
+        ContentType: 'application/json',
+      })
+    );
 
     console.log('Cloud upload completed successfully:', videoId);
 
@@ -143,17 +166,16 @@ export async function POST(request: NextRequest) {
         projectName: metadata.projectName,
         fileSize: metadata.fileSize,
         uploadDate: metadata.uploadDate,
-        status: metadata.status
-      }
+        status: metadata.status,
+      },
     });
-
   } catch (error) {
     console.error('Cloud upload error:', error);
 
     return NextResponse.json(
       {
         success: false,
-        error: error instanceof Error ? error.message : 'Cloud upload failed'
+        error: error instanceof Error ? error.message : 'Cloud upload failed',
       },
       { status: 500 }
     );

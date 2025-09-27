@@ -19,15 +19,15 @@ export class HybridStorage {
   constructor(config?: Partial<HybridStorageConfig>) {
     this.localStorage = new LocalStorage();
     this.metadataManager = new MetadataManager();
-    
+
     // Initialize R2 storage if configured
     const r2Configured = EnvironmentValidator.isR2Configured();
-    
+
     this.config = {
       enableR2Backup: r2Configured,
       autoBackup: r2Configured,
       fallbackToR2: r2Configured,
-      ...config
+      ...config,
     };
 
     if (this.config.enableR2Backup && r2Configured) {
@@ -73,14 +73,20 @@ export class HybridStorage {
 
         if (backupResult.success) {
           // Update metadata to reflect backup status
-          const updatedMetadata = await this.metadataManager.updateMetadata(metadata.id, {
-            status: 'backed-up',
-            r2Path: backupResult.r2Path
-          });
-          
+          const updatedMetadata = await this.metadataManager.updateMetadata(
+            metadata.id,
+            {
+              status: 'backed-up',
+              r2Path: backupResult.r2Path,
+            }
+          );
+
           return updatedMetadata || metadata;
         } else {
-          console.warn(`R2 backup failed for video ${metadata.id}:`, backupResult.error);
+          console.warn(
+            `R2 backup failed for video ${metadata.id}:`,
+            backupResult.error
+          );
         }
       } catch (error) {
         console.warn(`R2 backup error for video ${metadata.id}:`, error);
@@ -103,29 +109,31 @@ export class HybridStorage {
     try {
       const localResult = await this.localStorage.getVideoStream(videoId);
       await this.metadataManager.incrementDownloadCount(videoId);
-      
+
       return {
         stream: localResult.stream,
         size: localResult.size,
         filename: localResult.filename,
-        source: 'local'
+        source: 'local',
       };
-    } catch (localError) {
-      console.log(`Local video not found for ${videoId}, trying R2 fallback...`);
+    } catch {
+      console.log(
+        `Local video not found for ${videoId}, trying R2 fallback...`
+      );
 
       // Fallback to R2 if enabled
       if (this.config.fallbackToR2 && this.r2Storage) {
         try {
           const r2Result = await this.r2Storage.getVideoStream(videoId);
-          
+
           if (r2Result.success && r2Result.stream) {
             await this.metadataManager.incrementDownloadCount(videoId);
-            
+
             return {
               stream: r2Result.stream,
               size: r2Result.contentLength || 0,
               filename: `video-${videoId}`,
-              source: 'r2'
+              source: 'r2',
             };
           }
         } catch (r2Error) {
@@ -140,11 +148,13 @@ export class HybridStorage {
   /**
    * Manually backup video to R2
    */
-  async backupVideo(videoId: string): Promise<{ success: boolean; error?: string }> {
+  async backupVideo(
+    videoId: string
+  ): Promise<{ success: boolean; error?: string }> {
     if (!this.r2Storage) {
       return {
         success: false,
-        error: 'R2 storage not configured'
+        error: 'R2 storage not configured',
       };
     }
 
@@ -154,7 +164,7 @@ export class HybridStorage {
       if (!metadata) {
         return {
           success: false,
-          error: 'Video metadata not found'
+          error: 'Video metadata not found',
         };
       }
 
@@ -162,34 +172,38 @@ export class HybridStorage {
       if (metadata.status === 'backed-up') {
         return {
           success: true,
-          error: 'Video already backed up'
+          error: 'Video already backed up',
         };
       }
 
       // Read video from local storage
       const videoBuffer = await this.localStorage.readVideo(videoId);
-      
+
       // Upload to R2
-      const backupResult = await this.r2Storage.uploadVideo(videoId, videoBuffer, metadata);
-      
+      const backupResult = await this.r2Storage.uploadVideo(
+        videoId,
+        videoBuffer,
+        metadata
+      );
+
       if (backupResult.success) {
         // Update metadata
         await this.metadataManager.updateMetadata(videoId, {
           status: 'backed-up',
-          r2Path: backupResult.r2Path
+          r2Path: backupResult.r2Path,
         });
-        
+
         return { success: true };
       } else {
         return {
           success: false,
-          error: backupResult.error
+          error: backupResult.error,
         };
       }
     } catch (error) {
       return {
         success: false,
-        error: `Backup failed: ${error}`
+        error: `Backup failed: ${error}`,
       };
     }
   }
@@ -197,7 +211,9 @@ export class HybridStorage {
   /**
    * Delete video from both local and R2 storage
    */
-  async deleteVideo(videoId: string): Promise<{ success: boolean; error?: string }> {
+  async deleteVideo(
+    videoId: string
+  ): Promise<{ success: boolean; error?: string }> {
     let localDeleted = false;
     let r2Deleted = false;
     const errors: string[] = [];
@@ -214,7 +230,7 @@ export class HybridStorage {
       try {
         const r2Result = await this.r2Storage.deleteVideo(videoId);
         r2Deleted = r2Result.success;
-        
+
         if (!r2Result.success && r2Result.error) {
           errors.push(`R2 deletion failed: ${r2Result.error}`);
         }
@@ -231,10 +247,10 @@ export class HybridStorage {
     }
 
     const success = localDeleted || r2Deleted;
-    
+
     return {
       success,
-      error: errors.length > 0 ? errors.join('; ') : undefined
+      error: errors.length > 0 ? errors.join('; ') : undefined,
     };
   }
 
@@ -248,9 +264,9 @@ export class HybridStorage {
   }> {
     // Get local stats
     const localStats = await this.localStorage.getStorageStats();
-    
+
     let r2Stats: { totalSize: number; videoCount: number } | undefined;
-    
+
     // Get R2 stats if available
     if (this.r2Storage) {
       try {
@@ -258,7 +274,7 @@ export class HybridStorage {
         if (r2Result.success) {
           r2Stats = {
             totalSize: r2Result.totalSize || 0,
-            videoCount: r2Result.videoCount || 0
+            videoCount: r2Result.videoCount || 0,
           };
         }
       } catch (error) {
@@ -268,15 +284,18 @@ export class HybridStorage {
 
     // Calculate combined stats (avoid double counting)
     const allVideos = await this.metadataManager.getAllMetadata();
-    const combinedSize = allVideos.reduce((sum, video) => sum + video.fileSize, 0);
-    
+    const combinedSize = allVideos.reduce(
+      (sum, video) => sum + video.fileSize,
+      0
+    );
+
     return {
       local: localStats,
       r2: r2Stats,
       combined: {
         totalSize: combinedSize,
-        videoCount: allVideos.length
-      }
+        videoCount: allVideos.length,
+      },
     };
   }
 
@@ -291,7 +310,7 @@ export class HybridStorage {
     const availability = {
       local: false,
       r2: false,
-      metadata: false
+      metadata: false,
     };
 
     // Check local storage
@@ -316,7 +335,10 @@ export class HybridStorage {
       const metadata = await this.metadataManager.loadMetadata(videoId);
       availability.metadata = !!metadata;
     } catch (error) {
-      console.warn(`Error checking metadata availability for ${videoId}:`, error);
+      console.warn(
+        `Error checking metadata availability for ${videoId}:`,
+        error
+      );
     }
 
     return availability;
@@ -328,7 +350,7 @@ export class HybridStorage {
   getConfig(): HybridStorageConfig & { r2Available: boolean } {
     return {
       ...this.config,
-      r2Available: !!this.r2Storage
+      r2Available: !!this.r2Storage,
     };
   }
 
@@ -339,18 +361,21 @@ export class HybridStorage {
     local: { success: boolean; error?: string };
     r2?: { success: boolean; error?: string };
   }> {
-    const results: any = {
-      local: { success: false }
+    const results: {
+      local: { success: boolean; error?: string };
+      r2?: { success: boolean; error?: string };
+    } = {
+      local: { success: false },
     };
 
     // Test local storage
     try {
-      const stats = await this.localStorage.getStorageStats();
+      await this.localStorage.getStorageStats();
       results.local = { success: true };
     } catch (error) {
       results.local = {
         success: false,
-        error: `Local storage test failed: ${error}`
+        error: `Local storage test failed: ${error}`,
       };
     }
 
@@ -362,7 +387,7 @@ export class HybridStorage {
       } catch (error) {
         results.r2 = {
           success: false,
-          error: `R2 connection test failed: ${error}`
+          error: `R2 connection test failed: ${error}`,
         };
       }
     }

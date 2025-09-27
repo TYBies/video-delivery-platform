@@ -63,63 +63,110 @@ feature/fix/test branches → develop → main
 
 ### **Deployment Pipeline** (`.github/workflows/deploy.yml`)
 
+The deploy workflow uses Vercel’s prebuilt flow for deterministic, single-build deployments and surfaces the deployed URL back to GitHub Environments and downstream jobs.
+
 #### 1. 🚀 Deploy to Staging (develop branch)
 
-- Builds and deploys to Vercel staging environment
-- Triggers automatically on push to develop
+- Uses Vercel CLI (pinned) with prebuilt flow:
+  - `vercel pull --environment=preview`
+  - `vercel build`
+  - `vercel deploy --prebuilt`
+- Sets the GitHub Environment URL for `staging` to the preview deployment URL.
+- Exposes the preview URL as a job output for later steps.
+- Triggers automatically on push to `develop`.
 
 #### 2. 📝 Create Release PR (develop → main)
 
-- Auto-creates PR from develop to main
-- Includes deployment checklist
-- Requires manual review and approval
+- Auto-creates PR from `develop` to `main`.
+- Includes deployment checklist and the staging preview URL for QA.
+- Requires manual review and approval.
 
 #### 3. 🚀 Deploy to Production (main branch)
 
-- Production deployment to Vercel
-- Only runs on manual merge to main
-- Includes post-deployment notifications
+- Uses the same prebuilt flow with production settings:
+  - `vercel pull --environment=production`
+  - `vercel build`
+  - `vercel deploy --prebuilt --prod`
+- Sets the GitHub Environment URL for `production` to the live deployment URL.
+- Exposes the production URL as a job output for monitoring/tests.
 
 #### 4. 📊 Performance Monitoring
 
-- Runs automated performance tests
-- Lighthouse CI for performance metrics
-- Monitors production health
+- Runs automated performance checks against the actual production deployment URL output by the previous job.
+- Runs Lighthouse CI for performance metrics.
 
 ## 🛠️ Setup Instructions
 
-### **1. Repository Secrets**
+### **1. Secrets and Environments**
 
-Add these secrets in GitHub Settings → Secrets and variables → Actions:
+Define Environments in GitHub → Settings → Environments:
+
+- `staging` (optional protection rules/approvals)
+- `production` (recommended protection/approvals)
+
+Add these secrets (prefer environment-scoped secrets for least privilege):
 
 ```bash
+# Required for both staging and production environments
 VERCEL_TOKEN=your_vercel_token
 VERCEL_ORG_ID=your_org_id
 VERCEL_PROJECT_ID=your_project_id
-CODECOV_TOKEN=your_codecov_token (optional)
-LHCI_GITHUB_APP_TOKEN=your_lighthouse_token (optional)
-PRODUCTION_URL=https://your-domain.vercel.app
+
+# Optional
+CODECOV_TOKEN=your_codecov_token
+LHCI_GITHUB_APP_TOKEN=your_lighthouse_token
+# Vercel CLI is pinned in the workflow; override only if needed
+VERCEL_CLI_VERSION=32.7.1
 ```
+
+Note: The deployment URLs are discovered at deploy time via Vercel CLI and attached to the GitHub Environment, so a static `PRODUCTION_URL` secret is not required.
 
 ### **2. Branch Protection Rules**
 
 ```bash
-# Main branch protection
-- Require pull request reviews
+# Main branch protection (production)
+- Require pull request reviews (see Required Reviewers below)
 - Require status checks to pass
 - Require branches to be up to date
-- Restrict pushes to main branch
+- Require review from Code Owners (recommended)
+- Dismiss stale reviews when new commits are pushed (recommended)
+- Restrict pushes to main branch (allow only admins/bots)
 
-# Develop branch protection
+# Develop branch protection (staging)
 - Require status checks to pass
-- Allow force pushes for automation
+- Allow force pushes for automation (optional)
+
+#### Required Reviewers for Production PRs
+
+Configure required reviewers so that release PRs from `develop → main` must be approved by humans before merge:
+
+1. GitHub → Settings → Branches → Add rule for `main`.
+2. Enable “Require a pull request before merging”.
+3. Enable “Require approvals” and set the minimum (e.g., 1–2 approvals).
+4. Enable “Require review from Code Owners” (recommended).
+5. Optionally restrict who can dismiss reviews and who can push to `main`.
+
+Optional: Define Code Owners so the right people are auto‑requested as reviewers. Create `.github/CODEOWNERS`:
+
+```txt
+# Example: require release managers for all changes
+* @your-org/release-managers
+```
+
+You can scope owners per path to route reviews to specific teams.
 ```
 
 ### **3. Vercel Integration**
 
-1. Connect your GitHub repo to Vercel
-2. Set up staging and production environments
-3. Configure environment variables in Vercel dashboard
+1. Connect your GitHub repo to Vercel.
+2. Configure Project Environment Variables in Vercel (Preview vs. Production). Prefer using `NEXT_PUBLIC_*` only for values needed client‑side.
+3. The workflow runs `vercel pull` to sync the correct env before building, ensuring parity with Vercel’s build-time configuration.
+
+### **4. Deterministic Deploys and Safety**
+
+- Prebuilt deploys: A single authoritative build is created in CI (`vercel build`) and deployed without rebuilding (`vercel deploy --prebuilt`).
+- Permissions: Workflow defaults to `contents: read`; the PR job requests `pull-requests: write` only where needed.
+- Concurrency: In-flight deploy runs are auto-cancelled per branch to avoid overlapping deployments.
 
 ## 🔄 Workflow Examples
 

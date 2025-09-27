@@ -8,12 +8,12 @@ interface CacheEntry<T> {
 }
 
 class MetadataCache {
-  private cache = new Map<string, CacheEntry<any>>();
+  private cache = new Map<string, CacheEntry<unknown>>();
   private readonly defaultTTL = 5 * 60 * 1000; // 5 minutes
   private readonly videoListTTL = 2 * 60 * 1000; // 2 minutes for video lists
   private readonly metadataTTL = 10 * 60 * 1000; // 10 minutes for individual metadata
 
-  private isExpired(entry: CacheEntry<any>): boolean {
+  private isExpired(entry: CacheEntry<unknown>): boolean {
     return Date.now() - entry.timestamp > entry.ttl;
   }
 
@@ -25,7 +25,7 @@ class MetadataCache {
         keysToDelete.push(key);
       }
     });
-    keysToDelete.forEach(key => this.cache.delete(key));
+    keysToDelete.forEach((key) => this.cache.delete(key));
   }
 
   get<T>(key: string): T | null {
@@ -37,7 +37,7 @@ class MetadataCache {
       return null;
     }
 
-    return entry.data;
+    return entry.data as T;
   }
 
   set<T>(key: string, data: T, customTTL?: number): void {
@@ -45,25 +45,36 @@ class MetadataCache {
     this.cache.set(key, {
       data,
       timestamp: Date.now(),
-      ttl
+      ttl,
     });
   }
 
   // Specialized methods for different data types
-  getVideoList(): any[] | null {
-    return this.get<any[]>('video-list');
+  getVideoList(): import('../types').VideoMetadata[] | null {
+    return this.get<import('../types').VideoMetadata[]>('video-list');
   }
 
-  setVideoList(videos: any[]): void {
-    this.set('video-list', videos, this.videoListTTL);
+  setVideoList(videos: import('../types').VideoMetadata[]): void {
+    this.set<import('../types').VideoMetadata[]>(
+      'video-list',
+      videos,
+      this.videoListTTL
+    );
   }
 
-  getVideoMetadata(videoId: string): any | null {
-    return this.get(`metadata:${videoId}`);
+  getVideoMetadata(videoId: string): import('../types').VideoMetadata | null {
+    return this.get<import('../types').VideoMetadata>(`metadata:${videoId}`);
   }
 
-  setVideoMetadata(videoId: string, metadata: any): void {
-    this.set(`metadata:${videoId}`, metadata, this.metadataTTL);
+  setVideoMetadata(
+    videoId: string,
+    metadata: import('../types').VideoMetadata
+  ): void {
+    this.set<import('../types').VideoMetadata>(
+      `metadata:${videoId}`,
+      metadata,
+      this.metadataTTL
+    );
   }
 
   invalidateVideo(videoId: string): void {
@@ -77,11 +88,11 @@ class MetadataCache {
   }
 
   // Get cache statistics for monitoring
-  getStats() {
+  getStats(): { size: number; keys: string[] } {
     this.cleanup();
     return {
       size: this.cache.size,
-      keys: Array.from(this.cache.keys())
+      keys: Array.from(this.cache.keys()),
     };
   }
 }
@@ -100,7 +111,9 @@ class RateLimiter {
     const requests = this.requests.get(key) || [];
 
     // Remove old requests outside the window
-    const validRequests = requests.filter(timestamp => now - timestamp < this.windowMs);
+    const validRequests = requests.filter(
+      (timestamp) => now - timestamp < this.windowMs
+    );
 
     if (validRequests.length >= this.maxRequests) {
       return false;
@@ -114,7 +127,9 @@ class RateLimiter {
   getRemainingRequests(key: string = 'default'): number {
     const now = Date.now();
     const requests = this.requests.get(key) || [];
-    const validRequests = requests.filter(timestamp => now - timestamp < this.windowMs);
+    const validRequests = requests.filter(
+      (timestamp) => now - timestamp < this.windowMs
+    );
     // Update the stored requests to only include valid ones
     this.requests.set(key, validRequests);
     return Math.max(0, this.maxRequests - validRequests.length);

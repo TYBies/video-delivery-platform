@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { getBackgroundRecoveryService } from '@/lib/background-recovery-service';
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
     const service = getBackgroundRecoveryService();
     const status = service.getStatus();
@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (error) {
     console.error('Failed to get recovery service status:', error);
-    
+
     return NextResponse.json(
       {
         success: false,
@@ -25,10 +25,10 @@ export async function GET(request: NextRequest) {
   }
 }
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     const service = getBackgroundRecoveryService();
-    
+
     console.log('Manual recovery triggered via API');
     const result = await service.forceRecoveryCheck();
 
@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Manual recovery failed:', error);
-    
+
     return NextResponse.json(
       {
         success: false,
