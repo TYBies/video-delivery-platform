@@ -1,0 +1,51 @@
+name: Auto PR to Develop
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+      - 'fix/**'
+      - 'test/**'
+      - 'chore/**'
+      - 'refactor/**'
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: auto-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  open-pr:
+    name: Open PR to develop
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ensure PR exists to develop
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$HEAD_BRANCH" = "develop" ] || [ "$HEAD_BRANCH" = "main" ]; then
+            echo "Skipping protected branches."
+            exit 0
+          fi
+
+          PR_EXISTS=$(gh pr list --base develop --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number' || true)
+          if [ -n "$PR_EXISTS" ]; then
+            echo "PR #$PR_EXISTS already exists from $HEAD_BRANCH to develop."
+            exit 0
+          fi
+
+          TITLE="Auto PR: $HEAD_BRANCH -> develop"
+          BODY=$(cat <<'EOF'
+This PR was automatically opened to merge the branch into `develop`.
+
+Please review CI checks before merging. Ensure conventional commits and update tests if needed.
+EOF
+)
+          gh pr create --base develop --head "$HEAD_BRANCH" --title "$TITLE" --body "$BODY"
+          echo "Opened PR from $HEAD_BRANCH to develop."
+
