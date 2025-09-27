@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { StartupService } from '@/lib/startup-service';
 
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     console.log('Manual startup tasks triggered');
-    
+
     const startupService = new StartupService();
     await startupService.runStartupTasks();
 
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Startup tasks failed:', error);
-    
+
     return NextResponse.json(
       {
         success: false,

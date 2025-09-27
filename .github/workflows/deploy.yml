@@ -4,15 +4,27 @@ on:
   push:
     branches: [ main, develop ]
 
+permissions:
+  contents: read
 env:
   NODE_VERSION: '20'
+  VERCEL_CLI_VERSION: '32.7.1'
+
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   deploy-staging:
     name: 🚀 Deploy to Staging
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/develop'
-    environment: staging
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.preview_url }}
+
+    outputs:
+      preview_url: ${{ steps.deploy.outputs.preview_url }}
 
     steps:
     - name: 📥 Checkout code
@@ -24,19 +36,25 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
 
-    - name: 📥 Install dependencies
-      run: npm ci
+    - name: 📦 Install Vercel CLI
+      run: npm install -g vercel@${{ env.VERCEL_CLI_VERSION }}
 
-    - name: 🏗️ Build for staging
-      run: npm run build
+    - name: 🔐 Pull Vercel env (preview)
+      run: vercel pull --yes --environment=preview --token ${{ secrets.VERCEL_TOKEN }}
       env:
-        NODE_ENV: production
-        NEXT_PUBLIC_VERCEL_ENV: staging
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-    - name: 🚀 Deploy to Vercel Staging
+    - name: 🏗️ Build (prebuilt artifact)
+      run: vercel build --token ${{ secrets.VERCEL_TOKEN }}
+
+    - name: 🚀 Deploy prebuilt to Vercel (preview)
+      id: deploy
       run: |
-        npm install -g vercel@latest
-        vercel --token ${{ secrets.VERCEL_TOKEN }} --yes
+        set -euo pipefail
+        URL=$(vercel deploy --prebuilt --token ${{ secrets.VERCEL_TOKEN }} | tail -n1)
+        echo "Preview deployment: $URL"
+        echo "preview_url=$URL" >> "$GITHUB_OUTPUT"
       env:
         VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -46,6 +64,9 @@ jobs:
     runs-on: ubuntu-latest
     needs: deploy-staging
     if: github.ref == 'refs/heads/develop'
+    permissions:
+      contents: read
+      pull-requests: write
 
     steps:
     - name: 📥 Checkout code
@@ -54,49 +75,60 @@ jobs:
         fetch-depth: 0
 
     - name: 📝 Create Pull Request to Main
-      uses: peter-evans/create-pull-request@v6
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        branch: release/auto-pr-${{ github.run_number }}
-        base: main
-        head: develop
-        title: '🚀 Release: Deploy develop to production'
-        body: |
-          ## 🚀 Production Release Candidate
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        # Check if PR from develop to main already exists
+        PR_EXISTS=$(gh pr list --base main --head develop --json number --jq '.[0].number' || echo "")
 
-          **Staging Deployment**: Successfully deployed to staging ✅
-          **Security Scans**: All security checks passed ✅
-          **Tests**: All tests passing ✅
+        if [ -z "$PR_EXISTS" ]; then
+          echo "Creating new PR from develop to main..."
+          gh pr create \
+            --base main \
+            --head develop \
+            --title "🚀 Release: Deploy develop to production" \
+            --body "## 🚀 Production Release Candidate
 
-          ### 📋 Release Checklist
-          - [x] Code review completed
-          - [x] All CI checks passed
-          - [x] Staging deployment successful
-          - [x] Security audit completed
-          - [ ] Manual QA testing on staging
-          - [ ] Performance testing completed
-          - [ ] Ready for production deployment
+        **Staging Deployment**: Successfully deployed to staging ✅
+        **Preview URL**: ${{ needs.deploy-staging.outputs.preview_url }}
+        **Security Scans**: All security checks passed ✅
+        **Tests**: All tests passing ✅
 
-          ### 🔗 Links
-          - **Staging URL**: Check Vercel deployment
-          - **Test Results**: Check Actions tab
-          - **Security Report**: Check Security tab
+        ### 📋 Release Checklist
+        - [x] Code review completed
+        - [x] All CI checks passed
+        - [x] Staging deployment successful
+        - [x] Security audit completed
+        - [ ] Manual QA testing on staging
+        - [ ] Performance testing completed
+        - [ ] Ready for production deployment
 
-          ### 📝 Changes
-          This PR contains all changes from the `develop` branch ready for production deployment.
+        ### 🔗 Links
+        - **Staging URL**: ${{ needs.deploy-staging.outputs.preview_url }}
+        - **Test Results**: Check Actions tab
+        - **Security Report**: Check Security tab
 
-          **⚠️ Review Required**: Manual review and approval required before merging to production.
-        labels: |
-          release
-          auto-generated
-        reviewers: |
-          ${{ github.actor }}
+        ### 📝 Changes
+        This PR contains all changes from the develop branch ready for production deployment.
+
+        **⚠️ Review Required**: Manual review and approval required before merging to production.
+
+        ---
+        🤖 *Auto-generated by GitHub Actions Run #${{ github.run_number }}*"
+        else
+          echo "PR #$PR_EXISTS already exists from develop to main"
+        fi
 
   deploy-production:
     name: 🚀 Deploy to Production
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
-    environment: production
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.production_url }}
+
+    outputs:
+      production_url: ${{ steps.deploy.outputs.production_url }}
 
     steps:
     - name: 📥 Checkout code
@@ -108,19 +140,25 @@ jobs:
         node-version: ${{ env.NODE_VERSION }}
         cache: 'npm'
 
-    - name: 📥 Install dependencies
-      run: npm ci
+    - name: 📦 Install Vercel CLI
+      run: npm install -g vercel@${{ env.VERCEL_CLI_VERSION }}
 
-    - name: 🏗️ Build for production
-      run: npm run build
+    - name: 🔐 Pull Vercel env (production)
+      run: vercel pull --yes --environment=production --token ${{ secrets.VERCEL_TOKEN }}
       env:
-        NODE_ENV: production
-        NEXT_PUBLIC_VERCEL_ENV: production
+        VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+        VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
-    - name: 🚀 Deploy to Vercel Production
+    - name: 🏗️ Build (prebuilt artifact)
+      run: vercel build --token ${{ secrets.VERCEL_TOKEN }}
+
+    - name: 🚀 Deploy prebuilt to Vercel (production)
+      id: deploy
       run: |
-        npm install -g vercel@latest
-        vercel --prod --token ${{ secrets.VERCEL_TOKEN }} --yes
+        set -euo pipefail
+        URL=$(vercel deploy --prebuilt --prod --token ${{ secrets.VERCEL_TOKEN }} | tail -n1)
+        echo "Production deployment: $URL"
+        echo "production_url=$URL" >> "$GITHUB_OUTPUT"
       env:
         VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
         VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
@@ -128,7 +166,7 @@ jobs:
     - name: 🎉 Post-deployment notification
       run: |
         echo "🎉 Successfully deployed to production!"
-        echo "🔗 Production URL: https://your-domain.vercel.app"
+        echo "🔗 Production URL: https://video-delivery-platform-bv9t.vercel.app/"
 
   performance-monitoring:
     name: 📊 Performance Monitoring
@@ -153,7 +191,7 @@ jobs:
       run: npx tsx scripts/test-deployment.ts
       env:
         NODE_ENV: production
-        TARGET_URL: ${{ secrets.PRODUCTION_URL }}
+        TARGET_URL: ${{ needs.deploy-production.outputs.production_url }}
 
     - name: 🔍 Lighthouse CI
       run: |

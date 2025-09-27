@@ -13,6 +13,12 @@
       "env": {
         "jest": true
       }
+    },
+    {
+      "files": ["jest.config.js", "scripts/**/*.js"],
+      "rules": {
+        "@typescript-eslint/no-require-imports": "off"
+      }
     }
   ]
 }

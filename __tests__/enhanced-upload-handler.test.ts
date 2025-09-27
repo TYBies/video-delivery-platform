@@ -16,15 +16,19 @@ describe('EnhancedUploadHandler', () => {
     // Clean up test directory
     try {
       await fs.rm(testStoragePath, { recursive: true, force: true });
-    } catch (error) {
+    } catch {
       // Ignore cleanup errors
     }
   });
 
-  const createOrphanedFile = async (videoId: string, filename: string, size: number = 10240): Promise<void> => {
+  const createOrphanedFile = async (
+    videoId: string,
+    filename: string,
+    size: number = 10240
+  ): Promise<void> => {
     const videoDir = path.join(testStoragePath, 'videos', videoId);
     await fs.mkdir(videoDir, { recursive: true });
-    
+
     const videoPath = path.join(videoDir, filename);
     const testContent = Buffer.alloc(size, 'test content');
     await fs.writeFile(videoPath, testContent);
@@ -32,7 +36,7 @@ describe('EnhancedUploadHandler', () => {
 
   const createMockRequest = (contentLength: number) => {
     const testContent = Buffer.alloc(contentLength, 'mock video data');
-    
+
     return {
       body: {
         getReader: () => ({
@@ -40,16 +44,16 @@ describe('EnhancedUploadHandler', () => {
             // Simulate reading the entire content at once
             const value = testContent;
             return { done: false, value };
-          }
-        })
-      }
+          },
+        }),
+      },
     } as any;
   };
 
   describe('handleUploadWithRecovery', () => {
     it('should handle normal upload successfully', async () => {
       const mockRequest = createMockRequest(5000);
-      
+
       const result = await handler.handleUploadWithRecovery(
         mockRequest,
         'test-client',
@@ -96,7 +100,7 @@ describe('EnhancedUploadHandler', () => {
 
       // Simulate an upload that would match the orphaned file
       const mockRequest = createMockRequest(8000);
-      
+
       const result = await handler.handleUploadWithRecovery(
         mockRequest,
         'recovery-client',
@@ -108,10 +112,18 @@ describe('EnhancedUploadHandler', () => {
       expect(result).toBeDefined();
       expect(result.filename).toBe('orphaned-video.mp4');
       expect(result.downloadUrl).toContain('/download/');
-      
+
       // Verify metadata was created
-      const metadataPath = path.join(testStoragePath, 'videos', result.id, 'metadata.json');
-      const exists = await fs.access(metadataPath).then(() => true).catch(() => false);
+      const metadataPath = path.join(
+        testStoragePath,
+        'videos',
+        result.id,
+        'metadata.json'
+      );
+      const exists = await fs
+        .access(metadataPath)
+        .then(() => true)
+        .catch(() => false);
       expect(exists).toBe(true);
     });
   });
@@ -143,12 +155,28 @@ describe('EnhancedUploadHandler', () => {
       await handler.runMaintenance();
 
       // Check that metadata was created for orphans
-      const metadata1Path = path.join(testStoragePath, 'videos', 'maintenance-orphan-1', 'metadata.json');
-      const metadata2Path = path.join(testStoragePath, 'videos', 'maintenance-orphan-2', 'metadata.json');
-      
-      const exists1 = await fs.access(metadata1Path).then(() => true).catch(() => false);
-      const exists2 = await fs.access(metadata2Path).then(() => true).catch(() => false);
-      
+      const metadata1Path = path.join(
+        testStoragePath,
+        'videos',
+        'maintenance-orphan-1',
+        'metadata.json'
+      );
+      const metadata2Path = path.join(
+        testStoragePath,
+        'videos',
+        'maintenance-orphan-2',
+        'metadata.json'
+      );
+
+      const exists1 = await fs
+        .access(metadata1Path)
+        .then(() => true)
+        .catch(() => false);
+      const exists2 = await fs
+        .access(metadata2Path)
+        .then(() => true)
+        .catch(() => false);
+
       expect(exists1).toBe(true);
       expect(exists2).toBe(true);
     });

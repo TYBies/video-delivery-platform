@@ -8,7 +8,11 @@ export class MetadataManager {
 
   constructor(storagePath?: string) {
     this.storagePath = storagePath || process.env.STORAGE_PATH || './uploads';
-    this.indexPath = path.join(this.storagePath, 'metadata', 'videos-index.json');
+    this.indexPath = path.join(
+      this.storagePath,
+      'metadata',
+      'videos-index.json'
+    );
   }
 
   /**
@@ -37,22 +41,26 @@ export class MetadataManager {
 
       if (isS3Enabled()) {
         try {
-          const { S3Client, GetObjectCommand } = await import('@aws-sdk/client-s3');
+          const { S3Client, GetObjectCommand } = await import(
+            '@aws-sdk/client-s3'
+          );
           const config = loadS3Config();
           const client = new S3Client({
             region: config.region,
             endpoint: config.endpoint,
             credentials: {
               accessKeyId: config.accessKeyId,
-              secretAccessKey: config.secretAccessKey
-            }
+              secretAccessKey: config.secretAccessKey,
+            },
           });
 
           const key = `videos/${videoId}/metadata.json`;
-          const response = await client.send(new GetObjectCommand({
-            Bucket: config.bucket,
-            Key: key
-          }));
+          const response = await client.send(
+            new GetObjectCommand({
+              Bucket: config.bucket,
+              Key: key,
+            })
+          );
 
           if (response.Body) {
             const data = await response.Body.transformToString();
@@ -66,13 +74,20 @@ export class MetadataManager {
             console.log(`✅ Loaded metadata from cloud for video ${videoId}`);
             return metadata;
           }
-        } catch (cloudError) {
-          console.log(`Cloud metadata not found for ${videoId}, trying local...`);
+        } catch {
+          console.log(
+            `Cloud metadata not found for ${videoId}, trying local...`
+          );
         }
       }
 
       // Fallback to local storage
-      const metadataFile = path.join(this.storagePath, 'videos', videoId, 'metadata.json');
+      const metadataFile = path.join(
+        this.storagePath,
+        'videos',
+        videoId,
+        'metadata.json'
+      );
       const data = await fs.readFile(metadataFile, 'utf-8');
       const metadata = JSON.parse(data);
 
@@ -90,7 +105,10 @@ export class MetadataManager {
   /**
    * Update existing metadata
    */
-  async updateMetadata(videoId: string, updates: Partial<VideoMetadata>): Promise<VideoMetadata | null> {
+  async updateMetadata(
+    videoId: string,
+    updates: Partial<VideoMetadata>
+  ): Promise<VideoMetadata | null> {
     const existing = await this.loadMetadata(videoId);
     if (!existing) {
       throw new Error(`Video metadata not found for ID: ${videoId}`);
@@ -108,11 +126,16 @@ export class MetadataManager {
     try {
       // Remove from index
       await this.removeFromIndex(videoId);
-      
+
       // Delete individual metadata file
-      const metadataFile = path.join(this.storagePath, 'videos', videoId, 'metadata.json');
+      const metadataFile = path.join(
+        this.storagePath,
+        'videos',
+        videoId,
+        'metadata.json'
+      );
       await fs.unlink(metadataFile);
-      
+
       return true;
     } catch (error) {
       console.error(`Failed to delete metadata for video ${videoId}:`, error);
@@ -127,13 +150,13 @@ export class MetadataManager {
     try {
       const indexData = await fs.readFile(this.indexPath, 'utf-8');
       const index = JSON.parse(indexData);
-      
+
       // Convert date strings back to Date objects
-      return index.videos.map((video: any) => ({
+      return (index.videos as VideoMetadata[]).map((video) => ({
         ...video,
-        uploadDate: new Date(video.uploadDate)
+        uploadDate: new Date(video.uploadDate),
       }));
-    } catch (error) {
+    } catch {
       // If index doesn't exist, return empty array
       return [];
     }
@@ -144,7 +167,7 @@ export class MetadataManager {
    */
   async getVideosByClient(clientName: string): Promise<VideoMetadata[]> {
     const allVideos = await this.getAllMetadata();
-    return allVideos.filter(video => 
+    return allVideos.filter((video) =>
       video.clientName.toLowerCase().includes(clientName.toLowerCase())
     );
   }
@@ -154,7 +177,7 @@ export class MetadataManager {
    */
   async getVideosByProject(projectName: string): Promise<VideoMetadata[]> {
     const allVideos = await this.getAllMetadata();
-    return allVideos.filter(video => 
+    return allVideos.filter((video) =>
       video.projectName.toLowerCase().includes(projectName.toLowerCase())
     );
   }
@@ -162,9 +185,11 @@ export class MetadataManager {
   /**
    * Get videos with specific status
    */
-  async getVideosByStatus(status: VideoMetadata['status']): Promise<VideoMetadata[]> {
+  async getVideosByStatus(
+    status: VideoMetadata['status']
+  ): Promise<VideoMetadata[]> {
     const allVideos = await this.getAllMetadata();
-    return allVideos.filter(video => video.status === status);
+    return allVideos.filter((video) => video.status === status);
   }
 
   /**
@@ -172,7 +197,7 @@ export class MetadataManager {
    */
   async getActiveVideos(): Promise<VideoMetadata[]> {
     const allVideos = await this.getAllMetadata();
-    return allVideos.filter(video => video.isActive);
+    return allVideos.filter((video) => video.isActive);
   }
 
   /**
@@ -189,7 +214,10 @@ export class MetadataManager {
   /**
    * Update video status (local, backed-up, cloud-only)
    */
-  async updateVideoStatus(videoId: string, status: VideoMetadata['status']): Promise<void> {
+  async updateVideoStatus(
+    videoId: string,
+    status: VideoMetadata['status']
+  ): Promise<void> {
     await this.updateMetadata(videoId, { status });
   }
 
@@ -203,31 +231,58 @@ export class MetadataManager {
   /**
    * Validate metadata structure
    */
-  validateMetadata(metadata: any): { valid: boolean; errors: string[] } {
+  validateMetadata(metadata: unknown): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
-    const required = ['id', 'filename', 'clientName', 'projectName', 'uploadDate', 'fileSize'];
+    const required = [
+      'id',
+      'filename',
+      'clientName',
+      'projectName',
+      'uploadDate',
+      'fileSize',
+    ];
+
+    // Type guard to check if metadata is an object
+    if (!metadata || typeof metadata !== 'object') {
+      errors.push('Metadata must be an object');
+      return { valid: false, errors };
+    }
+
+    const metadataObj = metadata as Partial<VideoMetadata> &
+      Record<string, unknown>;
 
     for (const field of required) {
-      if (!metadata[field]) {
+      if (!(field in metadataObj)) {
         errors.push(`Missing required field: ${field}`);
       }
     }
 
-    if (metadata.fileSize && typeof metadata.fileSize !== 'number') {
+    if (
+      metadataObj.fileSize !== undefined &&
+      typeof metadataObj.fileSize !== 'number'
+    ) {
       errors.push('fileSize must be a number');
     }
 
-    if (metadata.downloadCount && typeof metadata.downloadCount !== 'number') {
+    if (
+      metadataObj.downloadCount !== undefined &&
+      typeof metadataObj.downloadCount !== 'number'
+    ) {
       errors.push('downloadCount must be a number');
     }
 
-    if (metadata.status && !['local', 'backed-up', 'cloud-only'].includes(metadata.status)) {
+    if (
+      metadataObj.status !== undefined &&
+      !['local', 'backed-up', 'cloud-only'].includes(
+        metadataObj.status as string
+      )
+    ) {
       errors.push('status must be one of: local, backed-up, cloud-only');
     }
 
     return {
       valid: errors.length === 0,
-      errors
+      errors,
     };
   }
 
@@ -240,26 +295,33 @@ export class MetadataManager {
     try {
       const indexData = await fs.readFile(this.indexPath, 'utf-8');
       index = JSON.parse(indexData);
-    } catch (error) {
+    } catch {
       // Ensure index directory exists
       try {
         await fs.mkdir(this.storagePath, { recursive: true });
-        await fs.mkdir(path.join(this.storagePath, 'metadata'), { recursive: true });
+        await fs.mkdir(path.join(this.storagePath, 'metadata'), {
+          recursive: true,
+        });
       } catch {}
     }
 
     // Remove existing entry if it exists
-    index.videos = index.videos.filter(video => video.id !== metadata.id);
-    
+    index.videos = index.videos.filter((video) => video.id !== metadata.id);
+
     // Add new/updated entry
     index.videos.push(metadata);
 
     // Sort by upload date (newest first)
-    index.videos.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+    index.videos.sort(
+      (a, b) =>
+        new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()
+    );
 
     // Ensure directory still exists before writing
     try {
-      await fs.mkdir(path.join(this.storagePath, 'metadata'), { recursive: true });
+      await fs.mkdir(path.join(this.storagePath, 'metadata'), {
+        recursive: true,
+      });
     } catch {}
     await fs.writeFile(this.indexPath, JSON.stringify(index, null, 2));
   }
@@ -271,9 +333,11 @@ export class MetadataManager {
     try {
       const indexData = await fs.readFile(this.indexPath, 'utf-8');
       const index = JSON.parse(indexData);
-      
-      index.videos = index.videos.filter((video: VideoMetadata) => video.id !== videoId);
-      
+
+      index.videos = index.videos.filter(
+        (video: VideoMetadata) => video.id !== videoId
+      );
+
       await fs.writeFile(this.indexPath, JSON.stringify(index, null, 2));
     } catch (error) {
       console.error('Failed to remove from index:', error);
@@ -293,12 +357,12 @@ export class MetadataManager {
 
       for (const folder of videoFolders) {
         const metadataFile = path.join(videosDir, folder, 'metadata.json');
-        
+
         try {
           const data = await fs.readFile(metadataFile, 'utf-8');
           const metadata = JSON.parse(data);
           metadata.uploadDate = new Date(metadata.uploadDate);
-          
+
           const validation = this.validateMetadata(metadata);
           if (validation.valid) {
             index.videos.push(metadata);
@@ -312,11 +376,13 @@ export class MetadataManager {
       }
 
       // Sort by upload date (newest first)
-      index.videos.sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+      index.videos.sort(
+        (a, b) =>
+          new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()
+      );
 
       await fs.mkdir(path.dirname(this.indexPath), { recursive: true });
       await fs.writeFile(this.indexPath, JSON.stringify(index, null, 2));
-
     } catch (error) {
       console.error('Failed to rebuild index:', error);
     }

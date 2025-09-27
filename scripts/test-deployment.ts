@@ -22,7 +22,7 @@ const colors = {
   yellow: '\x1b[33m',
   blue: '\x1b[34m',
   reset: '\x1b[0m',
-  bold: '\x1b[1m'
+  bold: '\x1b[1m',
 };
 
 function log(message: string, color = colors.reset) {
@@ -60,7 +60,7 @@ async function testCaching() {
   // Test 2: TTL expiration
   metadataCache.set('ttl-test', { data: 'expires soon' }, 100);
   const immediate = metadataCache.get('ttl-test');
-  await new Promise(resolve => setTimeout(resolve, 150));
+  await new Promise((resolve) => setTimeout(resolve, 150));
   const afterExpiry = metadataCache.get('ttl-test');
 
   logTest(
@@ -70,7 +70,32 @@ async function testCaching() {
   );
 
   // Test 3: Video-specific caching
-  const videos = [{ id: 'v1', name: 'Video 1' }, { id: 'v2', name: 'Video 2' }];
+  const videos = [
+    {
+      id: 'v1',
+      filename: 'Video 1.mp4',
+      clientName: 'Test Client',
+      projectName: 'Test Project',
+      uploadDate: new Date(),
+      fileSize: 1024000,
+      downloadCount: 0,
+      status: 'local' as const,
+      downloadUrl: '/download/v1',
+      isActive: true,
+    },
+    {
+      id: 'v2',
+      filename: 'Video 2.mp4',
+      clientName: 'Test Client',
+      projectName: 'Test Project',
+      uploadDate: new Date(),
+      fileSize: 2048000,
+      downloadCount: 0,
+      status: 'local' as const,
+      downloadUrl: '/download/v2',
+      isActive: true,
+    },
+  ];
   metadataCache.setVideoList(videos);
   const cachedVideos = metadataCache.getVideoList();
 
@@ -81,7 +106,18 @@ async function testCaching() {
   );
 
   // Test 4: Cache invalidation
-  metadataCache.setVideoMetadata('v1', { name: 'Video 1 metadata' });
+  metadataCache.setVideoMetadata('v1', {
+    id: 'v1',
+    filename: 'Video 1 metadata.mp4',
+    clientName: 'Test Client',
+    projectName: 'Test Project',
+    uploadDate: new Date(),
+    fileSize: 1024000,
+    downloadCount: 0,
+    status: 'local' as const,
+    downloadUrl: '/download/v1',
+    isActive: true,
+  });
   metadataCache.invalidateVideo('v1');
   const afterInvalidation = metadataCache.getVideoList();
   const metadataAfterInvalidation = metadataCache.getVideoMetadata('v1');
@@ -99,7 +135,9 @@ async function testCaching() {
 
   logTest(
     'Cache statistics',
-    stats.size === 2 && stats.keys.includes('stat1') && stats.keys.includes('stat2'),
+    stats.size === 2 &&
+      stats.keys.includes('stat1') &&
+      stats.keys.includes('stat2'),
     'Statistics should reflect current cache state'
   );
 
@@ -172,31 +210,34 @@ function testErrorHandling() {
   // Test 1: Bandwidth limit error
   const bandwidthError = {
     Code: 'AccessDenied',
-    message: 'Cannot download file, download bandwidth or transaction (Class B) cap exceeded.',
-    $metadata: { httpStatusCode: 403 }
+    message:
+      'Cannot download file, download bandwidth or transaction (Class B) cap exceeded.',
+    $metadata: { httpStatusCode: 403 },
   };
 
   const bandwidthResult = handleS3Error(bandwidthError);
   logTest(
     'Bandwidth limit error handling',
     bandwidthResult.isRateLimited &&
-    bandwidthResult.userFriendly.includes('Daily cloud storage limit reached') &&
-    bandwidthResult.userFriendly.includes('midnight GMT'),
+      bandwidthResult.userFriendly.includes(
+        'Daily cloud storage limit reached'
+      ) &&
+      bandwidthResult.userFriendly.includes('midnight GMT'),
     'Should provide user-friendly message with reset time'
   );
 
   // Test 2: Transaction cap error
   const transactionError = {
     Code: 'AccessDenied',
-    message: 'Transaction cap exceeded for today'
+    message: 'Transaction cap exceeded for today',
   };
 
   const transactionResult = handleS3Error(transactionError);
   logTest(
     'Transaction cap error handling',
     transactionResult.isRateLimited &&
-    transactionResult.userFriendly.includes('transaction limit reached') &&
-    transactionResult.userFriendly.includes('midnight GMT'),
+      transactionResult.userFriendly.includes('transaction limit reached') &&
+      transactionResult.userFriendly.includes('midnight GMT'),
     'Should provide specific transaction limit message'
   );
 
@@ -204,14 +245,14 @@ function testErrorHandling() {
   const notFoundError = {
     Code: 'NoSuchKey',
     message: 'The specified key does not exist',
-    $metadata: { httpStatusCode: 404 }
+    $metadata: { httpStatusCode: 404 },
   };
 
   const notFoundResult = handleS3Error(notFoundError);
   logTest(
     '404 error handling',
     !notFoundResult.isRateLimited &&
-    notFoundResult.userFriendly.includes('not found in cloud storage'),
+      notFoundResult.userFriendly.includes('not found in cloud storage'),
     'Should indicate file not found without rate limit flag'
   );
 
@@ -219,24 +260,30 @@ function testErrorHandling() {
   const serverError = {
     Code: 'InternalError',
     message: 'Internal server error',
-    $metadata: { httpStatusCode: 500 }
+    $metadata: { httpStatusCode: 500 },
   };
 
   const serverResult = handleS3Error(serverError);
   logTest(
     'Server error handling',
     !serverResult.isRateLimited &&
-    serverResult.userFriendly.includes('technical difficulties'),
+      serverResult.userFriendly.includes('technical difficulties'),
     'Should provide helpful server error message'
   );
 
   // Test 5: Error message quality
-  const allResults = [bandwidthResult, transactionResult, notFoundResult, serverResult];
-  const noTechnicalDetails = allResults.every(result =>
-    !result.userFriendly.includes('Code') &&
-    !result.userFriendly.includes('HTTP') &&
-    !result.userFriendly.includes('$metadata') &&
-    result.userFriendly.length > 20
+  const allResults = [
+    bandwidthResult,
+    transactionResult,
+    notFoundResult,
+    serverResult,
+  ];
+  const noTechnicalDetails = allResults.every(
+    (result) =>
+      !result.userFriendly.includes('Code') &&
+      !result.userFriendly.includes('HTTP') &&
+      !result.userFriendly.includes('$metadata') &&
+      result.userFriendly.length > 20
   );
 
   logTest(
@@ -289,14 +336,12 @@ async function testAPIEndpoints() {
         'Should return health status object'
       );
     }
-
   } catch (error) {
-    logTest(
-      'API endpoint connectivity',
-      false,
-      `Failed to connect: ${error}`
+    logTest('API endpoint connectivity', false, `Failed to connect: ${error}`);
+    log(
+      '❗ Make sure the development server is running on localhost:3001',
+      colors.yellow
     );
-    log('❗ Make sure the development server is running on localhost:3001', colors.yellow);
   }
 }
 
@@ -324,26 +369,28 @@ async function performanceTest() {
     await response2.json();
     const duration2 = Date.now() - start2;
 
-    const improvement = duration1 > 0 ? ((duration1 - duration2) / duration1 * 100) : 0;
+    const improvement =
+      duration1 > 0 ? ((duration1 - duration2) / duration1) * 100 : 0;
 
     logTest(
       'Cache performance improvement',
       duration2 < duration1,
       `First request: ${duration1}ms, Second request: ${duration2}ms (${improvement.toFixed(1)}% faster)`
     );
-
   } catch (error) {
-    logTest(
-      'Performance test',
-      false,
-      `Failed: ${error}`
-    );
+    logTest('Performance test', false, `Failed: ${error}`);
   }
 }
 
 async function main() {
-  log(`${colors.bold}🧪 Video Delivery Platform - Automated Test Suite${colors.reset}`, colors.blue);
-  log(`Testing error handling, caching, and performance improvements\n`, colors.yellow);
+  log(
+    `${colors.bold}🧪 Video Delivery Platform - Automated Test Suite${colors.reset}`,
+    colors.blue
+  );
+  log(
+    `Testing error handling, caching, and performance improvements\n`,
+    colors.yellow
+  );
 
   try {
     await testCaching();
@@ -360,9 +407,11 @@ async function main() {
     log('1. Upload a video through the UI', colors.yellow);
     log('2. View videos page (should load quickly from cache)', colors.yellow);
     log('3. Delete a video (should show proper feedback)', colors.yellow);
-    log('4. Try operations when hitting B2 limits (should show professional errors)', colors.yellow);
+    log(
+      '4. Try operations when hitting B2 limits (should show professional errors)',
+      colors.yellow
+    );
     log('5. Verify error messages are user-friendly', colors.yellow);
-
   } catch (error) {
     log(`\n❌ Test suite failed: ${error}`, colors.red);
     process.exit(1);

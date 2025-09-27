@@ -16,7 +16,7 @@ export class R2Client {
   constructor(config?: R2Config) {
     this.config = config || this.loadConfigFromEnv();
     this.bucket = this.config.bucket;
-    
+
     const clientConfig: S3ClientConfig = {
       region: this.config.region || 'auto',
       endpoint: `https://${this.config.accountId}.r2.cloudflarestorage.com`,
@@ -37,14 +37,16 @@ export class R2Client {
   private loadConfigFromEnv(): R2Config {
     const requiredEnvVars = [
       'CLOUDFLARE_R2_ACCOUNT_ID',
-      'CLOUDFLARE_R2_ACCESS_KEY', 
+      'CLOUDFLARE_R2_ACCESS_KEY',
       'CLOUDFLARE_R2_SECRET_KEY',
-      'CLOUDFLARE_R2_BUCKET'
+      'CLOUDFLARE_R2_BUCKET',
     ];
 
-    const missing = requiredEnvVars.filter(envVar => !process.env[envVar]);
+    const missing = requiredEnvVars.filter((envVar) => !process.env[envVar]);
     if (missing.length > 0) {
-      throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+      throw new Error(
+        `Missing required environment variables: ${missing.join(', ')}`
+      );
     }
 
     return {
@@ -52,7 +54,7 @@ export class R2Client {
       accessKey: process.env.CLOUDFLARE_R2_ACCESS_KEY!,
       secretKey: process.env.CLOUDFLARE_R2_SECRET_KEY!,
       bucket: process.env.CLOUDFLARE_R2_BUCKET!,
-      region: process.env.CLOUDFLARE_R2_REGION || 'auto'
+      region: process.env.CLOUDFLARE_R2_REGION || 'auto',
     };
   }
 
@@ -84,14 +86,16 @@ export class R2Client {
     try {
       const { HeadBucketCommand } = await import('@aws-sdk/client-s3');
       const command = new HeadBucketCommand({ Bucket: this.bucket });
-      
+
       await this.client.send(command);
-      
+
       return { success: true };
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
       return {
         success: false,
-        error: `R2 connection failed: ${error.message}`
+        error: `R2 connection failed: ${errorMessage}`,
       };
     }
   }
@@ -119,21 +123,30 @@ export class R2Client {
     }
 
     // Validate account ID format (should be 32 hex characters)
-    if (this.config.accountId && !/^[a-f0-9]{32}$/i.test(this.config.accountId)) {
+    if (
+      this.config.accountId &&
+      !/^[a-f0-9]{32}$/i.test(this.config.accountId)
+    ) {
       errors.push('Account ID should be 32 hexadecimal characters');
     }
 
     // Validate bucket name format
     if (this.config.bucket) {
       const bucketRegex = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
-      if (!bucketRegex.test(this.config.bucket) || this.config.bucket.length < 3 || this.config.bucket.length > 63) {
-        errors.push('Bucket name must be 3-63 characters, lowercase letters, numbers, and hyphens only');
+      if (
+        !bucketRegex.test(this.config.bucket) ||
+        this.config.bucket.length < 3 ||
+        this.config.bucket.length > 63
+      ) {
+        errors.push(
+          'Bucket name must be 3-63 characters, lowercase letters, numbers, and hyphens only'
+        );
       }
     }
 
     return {
       valid: errors.length === 0,
-      errors
+      errors,
     };
   }
 
