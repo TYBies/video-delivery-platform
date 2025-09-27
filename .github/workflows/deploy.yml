@@ -66,8 +66,6 @@ jobs:
             --base main \
             --head develop \
             --title "🚀 Release: Deploy develop to production" \
-            --label "release" \
-            --label "auto-generated" \
             --body "## 🚀 Production Release Candidate
 
         **Staging Deployment**: Successfully deployed to staging ✅
