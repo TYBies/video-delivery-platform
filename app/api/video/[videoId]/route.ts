@@ -187,6 +187,8 @@ export async function DELETE(
         console.warn(
           `❌ No objects found for video ${videoId} - video does not exist`
         );
+        // Invalidate cache since video doesn't exist on backend
+        metadataCache.invalidateVideo(videoId);
         return NextResponse.json(
           {
             success: false,
@@ -305,6 +307,10 @@ export async function DELETE(
           message: `Video ${videoId} deleted successfully from cloud storage`,
         });
       } else {
+        // Invalidate cache if video was not found
+        if (result.error?.includes('not found')) {
+          metadataCache.invalidateVideo(videoId);
+        }
         return NextResponse.json(
           {
             success: false,

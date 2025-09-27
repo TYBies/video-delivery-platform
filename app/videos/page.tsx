@@ -116,10 +116,18 @@ export default function VideosPage() {
         alert(message); // Only show alert for warnings
       }
     } catch (e: unknown) {
-      // Reset the optimistic update on error
-      await loadVideos();
       const msg = e instanceof Error ? e.message : String(e);
-      alert(`Delete failed: ${msg}`);
+
+      // If video not found (404), don't restore it - keep it removed from UI
+      // since backend has invalidated cache and video shouldn't exist
+      if (msg.includes('not found') || msg.includes('404')) {
+        // Video was correctly removed from UI, show info message instead of error
+        console.log(`Video was already deleted or doesn't exist: ${msg}`);
+      } else {
+        // For other errors, restore the video in UI
+        await loadVideos();
+        alert(`Delete failed: ${msg}`);
+      }
     } finally {
       setBusyId('');
     }
