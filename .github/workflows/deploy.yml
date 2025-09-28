@@ -159,7 +159,7 @@ jobs:
         VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
 
     - name: 🏗️ Build (prebuilt artifact)
-      run: vercel build --token ${{ secrets.VERCEL_TOKEN }}
+      run: vercel build --prod --token ${{ secrets.VERCEL_TOKEN }}
 
     - name: 🚀 Deploy prebuilt to Vercel (production)
       id: deploy
