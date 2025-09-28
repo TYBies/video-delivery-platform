@@ -136,3 +136,5 @@ uploads/videos/**/*.webm
 uploads/temp/*
 !uploads/temp/.gitkeep
 .vercel
+.swc/
+.turbo/
