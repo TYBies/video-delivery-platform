@@ -353,11 +353,17 @@ export default function UploadPage() {
   const copyDownloadLink = async () => {
     if (!result) return;
 
-    // Generate the permanent download link
-    const downloadUrl = `${window.location.origin}/api/direct-download/${result.videoId}`;
+    // Generate the permanent download link with proper protocol
+    const origin = window.location.origin.includes('localhost')
+      ? window.location.origin
+      : window.location.origin.replace('http:', 'https:');
+    const downloadUrl = `${origin}/api/direct-download/${result.videoId}`;
+
+    // Create a WhatsApp-friendly message with the link
+    const message = `📹 Your video is ready!\n\nClick here to download:\n${downloadUrl}\n\n✅ This link is permanent and can be shared anytime.`;
 
     try {
-      await navigator.clipboard.writeText(downloadUrl);
+      await navigator.clipboard.writeText(message);
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 2000);
     } catch {
@@ -678,9 +684,21 @@ export default function UploadPage() {
                 border: '1px solid #dee2e6',
               }}
             >
-              <code style={{ flex: 1, wordBreak: 'break-all' }}>
+              <a
+                href={`${window.location.origin}/api/direct-download/${result.videoId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  flex: 1,
+                  wordBreak: 'break-all',
+                  color: '#007bff',
+                  textDecoration: 'underline',
+                  fontFamily: 'monospace',
+                  fontSize: '14px',
+                }}
+              >
                 {window.location.origin}/api/direct-download/{result.videoId}
-              </code>
+              </a>
               <button
                 onClick={copyDownloadLink}
                 style={{
@@ -693,7 +711,7 @@ export default function UploadPage() {
                   whiteSpace: 'nowrap',
                 }}
               >
-                {linkCopied ? '✅ Copied!' : '💬 Copy for WhatsApp'}
+                {linkCopied ? '✅ Message Copied!' : '💬 Copy WhatsApp Message'}
               </button>
             </div>
             <p
