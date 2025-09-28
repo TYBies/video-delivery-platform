@@ -83,6 +83,10 @@ public
 .out
 .storybook-out
 
+# Playwright test artifacts
+playwright-report/
+test-results/
+
 # Temporary folders
 tmp/
 temp/
