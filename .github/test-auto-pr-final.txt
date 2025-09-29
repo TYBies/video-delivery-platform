@@ -1,3 +1,0 @@
-Final test to verify auto-PR workflow is working with PR_AUTOMATION_TOKEN
-Created: 2025-09-29
-Expected: Auto-PR should be created to develop branch

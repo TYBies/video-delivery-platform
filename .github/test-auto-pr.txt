@@ -1,3 +1,0 @@
-Test file to trigger auto-PR workflow
-Created at: 2025-09-29
-Purpose: Verify PR_AUTOMATION_TOKEN is working
