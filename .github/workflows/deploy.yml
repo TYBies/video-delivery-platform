@@ -84,10 +84,21 @@ jobs:
         fetch-depth: 0
 
     - name: 📝 Create Pull Request to Main
+      continue-on-error: true
       env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+        GH_DEFAULT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_BOT_TOKEN: ${{ secrets.PR_AUTOMATION_TOKEN }}
       run: |
         # Check if PR from develop to main already exists
+        set -euo pipefail
+        TOKEN="${GH_BOT_TOKEN:-}"
+        if [ -z "$TOKEN" ]; then
+          echo "PR automation token not configured (secrets.PR_AUTOMATION_TOKEN missing). Skipping PR creation."
+          exit 0
+        fi
+
+        export GH_TOKEN="$TOKEN"
         PR_EXISTS=$(gh pr list --base main --head develop --json number --jq '.[0].number' || echo "")
 
         if [ -z "$PR_EXISTS" ]; then
