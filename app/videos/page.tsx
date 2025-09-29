@@ -131,7 +131,11 @@ export default function VideosPage() {
       // since backend has invalidated cache and video shouldn't exist
       if (msg.includes('not found') || msg.includes('404')) {
         // Video was correctly removed from UI, show info message instead of error
-        console.log(`Video was already deleted or doesn't exist: ${msg}`);
+        console.log(
+          `Video metadata cleaned up: Video files were already deleted from storage`
+        );
+        // Still refresh to ensure consistency with backend
+        setTimeout(() => loadVideos(), 500);
       } else {
         // For other errors, restore the video in UI
         await loadVideos();
