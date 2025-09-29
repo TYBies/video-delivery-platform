@@ -60,3 +60,4 @@ EOF
 )
           gh pr create --base develop --head "$HEAD_BRANCH" --title "$TITLE" --body "$BODY"
           echo "Opened PR from $HEAD_BRANCH to develop."
+
