@@ -53,11 +53,11 @@ jobs:
 
           TITLE="Auto PR: $HEAD_BRANCH -> develop"
           BODY=$(cat <<'EOF'
-This PR was automatically opened to merge the branch into `develop`.
+          This PR was automatically opened to merge the branch into develop.
 
-Please review CI checks before merging. Ensure conventional commits and update tests if needed.
-EOF
-)
+          Please review CI checks before merging. Ensure conventional commits and update tests if needed.
+          EOF
+          )
           gh pr create --base develop --head "$HEAD_BRANCH" --title "$TITLE" --body "$BODY"
           echo "Opened PR from $HEAD_BRANCH to develop."
 
