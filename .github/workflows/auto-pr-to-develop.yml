@@ -22,16 +22,28 @@ jobs:
     name: Open PR to develop
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Ensure PR exists to develop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_DEFAULT_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_BOT_TOKEN: ${{ secrets.PR_AUTOMATION_TOKEN }}
           HEAD_BRANCH: ${{ github.ref_name }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           if [ "$HEAD_BRANCH" = "develop" ] || [ "$HEAD_BRANCH" = "main" ]; then
             echo "Skipping protected branches."
             exit 0
           fi
+
+          TOKEN="${GH_BOT_TOKEN:-}"
+          if [ -z "$TOKEN" ]; then
+            echo "PR automation token not configured (secrets.PR_AUTOMATION_TOKEN missing). Skipping auto PR."
+            exit 0
+          fi
+          export GH_TOKEN="$TOKEN"
 
           PR_EXISTS=$(gh pr list --base develop --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number' || true)
           if [ -n "$PR_EXISTS" ]; then
@@ -41,11 +53,11 @@ jobs:
 
           TITLE="Auto PR: $HEAD_BRANCH -> develop"
           BODY=$(cat <<'EOF'
-This PR was automatically opened to merge the branch into `develop`.
+          This PR was automatically opened to merge the branch into develop.
 
-Please review CI checks before merging. Ensure conventional commits and update tests if needed.
-EOF
-)
+          Please review CI checks before merging. Ensure conventional commits and update tests if needed.
+          EOF
+          )
           gh pr create --base develop --head "$HEAD_BRANCH" --title "$TITLE" --body "$BODY"
           echo "Opened PR from $HEAD_BRANCH to develop."
 

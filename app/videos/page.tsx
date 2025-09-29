@@ -29,6 +29,15 @@ export default function VideosPage() {
   const [copiedId, setCopiedId] = useState<string>('');
   const [linkLoading, setLinkLoading] = useState<string>('');
 
+  // New state for search and filter
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [sortBy, setSortBy] = useState<'date' | 'name' | 'size' | 'client'>(
+    'date'
+  );
+  const [filterStatus, setFilterStatus] = useState<
+    'all' | 'local' | 'backed-up' | 'cloud-only'
+  >('all');
+
   const loadVideos = async () => {
     setLoading(true);
     setError('');
@@ -179,6 +188,49 @@ export default function VideosPage() {
     }
   };
 
+  // Filter and sort videos
+  const getFilteredVideos = () => {
+    let filtered = [...videos];
+
+    // Apply status filter
+    if (filterStatus !== 'all') {
+      filtered = filtered.filter((v) => v.status === filterStatus);
+    }
+
+    // Apply search filter
+    if (searchTerm) {
+      const search = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (v) =>
+          v.filename.toLowerCase().includes(search) ||
+          v.clientName.toLowerCase().includes(search) ||
+          v.projectName.toLowerCase().includes(search)
+      );
+    }
+
+    // Apply sorting
+    filtered.sort((a, b) => {
+      switch (sortBy) {
+        case 'name':
+          return a.filename.localeCompare(b.filename);
+        case 'client':
+          return a.clientName.localeCompare(b.clientName);
+        case 'size':
+          return b.fileSize - a.fileSize;
+        case 'date':
+        default:
+          return (
+            new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime()
+          );
+      }
+    });
+
+    return filtered;
+  };
+
+  const filteredVideos = getFilteredVideos();
+  const totalSize = filteredVideos.reduce((sum, v) => sum + v.fileSize, 0);
+
   return (
     <main style={{ maxWidth: '900px', margin: '0 auto', padding: '20px' }}>
       <h1>Videos</h1>
@@ -222,6 +274,74 @@ export default function VideosPage() {
         </button>
       </div>
 
+      {/* Search and Filter Controls */}
+      <div
+        style={{
+          background: '#f8f9fa',
+          border: '1px solid #dee2e6',
+          borderRadius: 4,
+          padding: 15,
+          marginBottom: 16,
+        }}
+      >
+        <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 300px' }}>
+            <input
+              type="text"
+              placeholder="Search by filename, client, or project..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #ced4da',
+                borderRadius: 4,
+                fontSize: 14,
+              }}
+            />
+          </div>
+
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #ced4da',
+              borderRadius: 4,
+              fontSize: 14,
+            }}
+          >
+            <option value="date">Sort by Date</option>
+            <option value="name">Sort by Name</option>
+            <option value="client">Sort by Client</option>
+            <option value="size">Sort by Size</option>
+          </select>
+
+          <select
+            value={filterStatus}
+            onChange={(e) =>
+              setFilterStatus(e.target.value as typeof filterStatus)
+            }
+            style={{
+              padding: '8px 12px',
+              border: '1px solid #ced4da',
+              borderRadius: 4,
+              fontSize: 14,
+            }}
+          >
+            <option value="all">All Videos</option>
+            <option value="local">Local</option>
+            <option value="backed-up">Backed Up</option>
+            <option value="cloud-only">Cloud Only</option>
+          </select>
+        </div>
+
+        <div style={{ marginTop: 10, fontSize: 14, color: '#666' }}>
+          <strong>{filteredVideos.length}</strong> videos found
+          {filteredVideos.length > 0 && ` • Total size: ${fmtSize(totalSize)}`}
+        </div>
+      </div>
+
       {health && (
         <div
           style={{
@@ -252,14 +372,16 @@ export default function VideosPage() {
         </div>
       )}
 
-      {videos.length === 0 && !loading && (
+      {filteredVideos.length === 0 && !loading && (
         <div style={{ color: '#666' }}>
-          No videos yet. Upload one to get started.
+          {searchTerm || filterStatus !== 'all'
+            ? 'No videos match your search criteria.'
+            : 'No videos yet. Upload one to get started.'}
         </div>
       )}
 
       <div>
-        {videos.map((v) => (
+        {filteredVideos.map((v) => (
           <div
             key={v.id}
             className="video-item"

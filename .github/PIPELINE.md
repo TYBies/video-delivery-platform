@@ -117,13 +117,16 @@ CODECOV_TOKEN=your_codecov_token
 LHCI_GITHUB_APP_TOKEN=your_lighthouse_token
 # Vercel CLI is pinned in the workflow; override only if needed
 VERCEL_CLI_VERSION=32.7.1
+
+# Optional (enables auto-created PRs)
+PR_AUTOMATION_TOKEN=github_personal_access_token_with_repo_permissions
 ```
 
 Note: The deployment URLs are discovered at deploy time via Vercel CLI and attached to the GitHub Environment, so a static `PRODUCTION_URL` secret is not required.
 
 ### **2. Branch Protection Rules**
 
-```bash
+````bash
 # Main branch protection (production)
 - Require pull request reviews (see Required Reviewers below)
 - Require status checks to pass
@@ -151,10 +154,11 @@ Optional: Define Code Owners so the right people are auto‑requested as reviewe
 ```txt
 # Example: require release managers for all changes
 * @your-org/release-managers
-```
+````
 
 You can scope owners per path to route reviews to specific teams.
-```
+
+````
 
 ### **3. Vercel Integration**
 
@@ -167,6 +171,11 @@ You can scope owners per path to route reviews to specific teams.
 - Prebuilt deploys: A single authoritative build is created in CI (`vercel build`) and deployed without rebuilding (`vercel deploy --prebuilt`).
 - Permissions: Workflow defaults to `contents: read`; the PR job requests `pull-requests: write` only where needed.
 - Concurrency: In-flight deploy runs are auto-cancelled per branch to avoid overlapping deployments.
+
+### **5. Auto PRs and Release PRs**
+
+- The repo appears to restrict GitHub Actions from creating PRs with the default `GITHUB_TOKEN`.
+- To enable auto PRs from `feature/*` → `develop` and the auto release PR `develop → main`, create a classic PAT on a bot/user with `repo` scope and add it as `PR_AUTOMATION_TOKEN` (Actions secret). The workflows will use it; if absent, they skip PR creation gracefully and continue.
 
 ## 🔄 Workflow Examples
 
@@ -185,7 +194,7 @@ git push origin feature/new-upload-ui
 # Create PR to develop (manual or auto)
 # CI runs security + quality checks
 # Merge after approval
-```
+````
 
 ### **Release Process**
 
