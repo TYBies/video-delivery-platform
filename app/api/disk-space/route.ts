@@ -6,11 +6,20 @@ export async function GET() {
     const diskSpace = DiskSpaceManager.getReadableDiskSpace();
     const warning = DiskSpaceManager.getDiskSpaceWarning();
 
-    return NextResponse.json({
-      success: true,
-      diskSpace,
-      warning,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        diskSpace,
+        warning,
+      },
+      {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate',
+          Pragma: 'no-cache',
+          Expires: '0',
+        },
+      }
+    );
   } catch (error) {
     console.error('Disk space check error:', error);
 
