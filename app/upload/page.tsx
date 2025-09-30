@@ -46,8 +46,13 @@ export default function UploadPage() {
 
   // Load disk space info and FFmpeg status on component mount
   useEffect(() => {
-    // Load disk space
-    fetch('/api/disk-space')
+    // Load disk space with cache busting
+    fetch('/api/disk-space', {
+      cache: 'no-store',
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
+    })
       .then((res) => res.json())
       .then((data) => {
         if (data.success) {
