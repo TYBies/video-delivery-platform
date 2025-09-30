@@ -144,6 +144,12 @@ export async function POST(req: NextRequest) {
     );
 
     console.log(`✅ Successfully registered video ${videoId} in cloud storage`);
+
+    // Invalidate cache to ensure the new video shows up immediately
+    const { metadataCache } = await import('@/lib/metadata-cache');
+    metadataCache.invalidateVideo(videoId);
+    console.log('🔄 Invalidated video cache after registration');
+
     return NextResponse.json({ success: true, metadata });
   } catch (error) {
     console.error(`❌ Failed to save metadata for video ${videoId}:`, error);
