@@ -9,6 +9,10 @@ import {
 } from '@aws-sdk/client-s3';
 import type { VideoMetadata } from '@/types';
 
+// Force dynamic rendering and disable all caching for this route
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export async function GET() {
   try {
     if (isS3Enabled()) {
@@ -291,45 +295,46 @@ export async function GET() {
       });
 
       // For each discovered video ID, check if we have metadata or create basic metadata
+      // IMPORTANT: Only include videos that have actual video files in storage
       const allVideos: CloudVideoMetadata[] = [];
       for (const videoId of Array.from(allVideoIds)) {
+        // Verify this video ID has an actual video file (not just metadata)
+        const videoFile = videoFileMap.get(videoId);
+        if (!videoFile || !videoFile.Key) {
+          console.warn(`Skipping ${videoId} - no video file found in storage`);
+          continue;
+        }
+
         // Check if we already have metadata for this video
         const existingVideo = existingVideos.find((v) => v.id === videoId);
 
         if (existingVideo) {
+          // Verify the video file actually exists before including from index
           allVideos.push(existingVideo);
         } else {
-          // Get video file info from our map
-          const videoFile = videoFileMap.get(videoId);
+          // Extract filename from path
+          const filename = videoFile.Key.split('/').pop() || 'unknown.mov';
 
-          if (videoFile && videoFile.Key) {
-            // Extract filename from path
-            const filename = videoFile.Key.split('/').pop() || 'unknown.mov';
+          // Create basic metadata for discovered video using data from ListObjectsV2Command
+          const basicMetadata: CloudVideoMetadata = {
+            id: videoId,
+            filename: filename,
+            clientName: 'Unknown Client',
+            projectName: 'Discovered Video',
+            uploadDate:
+              videoFile.LastModified?.toISOString() || new Date().toISOString(),
+            fileSize: videoFile.Size || 0,
+            downloadCount: 0,
+            status: 'cloud-only' as const,
+            r2Path: videoFile.Key,
+            downloadUrl: `/api/download/${videoId}`,
+            isActive: true,
+          };
 
-            // Create basic metadata for discovered video using data from ListObjectsV2Command
-            const basicMetadata: CloudVideoMetadata = {
-              id: videoId,
-              filename: filename,
-              clientName: 'Unknown Client',
-              projectName: 'Discovered Video',
-              uploadDate:
-                videoFile.LastModified?.toISOString() ||
-                new Date().toISOString(),
-              fileSize: videoFile.Size || 0,
-              downloadCount: 0,
-              status: 'cloud-only' as const,
-              r2Path: videoFile.Key,
-              downloadUrl: `/api/download/${videoId}`,
-              isActive: true,
-            };
-
-            allVideos.push(basicMetadata);
-            console.log(
-              `Discovered unregistered video: ${videoId} at ${videoFile.Key}`
-            );
-          } else {
-            console.warn(`No video file found for ID: ${videoId}`);
-          }
+          allVideos.push(basicMetadata);
+          console.log(
+            `Discovered unregistered video: ${videoId} at ${videoFile.Key}`
+          );
         }
       }
 
