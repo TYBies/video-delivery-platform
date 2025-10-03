@@ -12,11 +12,17 @@ import type { VideoMetadata } from '@/types';
 export async function GET() {
   try {
     if (isS3Enabled()) {
-      // Check cache first to reduce B2 Class B transactions
-      const cachedVideos = metadataCache.getVideoList();
-      if (cachedVideos) {
-        console.log(`Returning ${cachedVideos.length} videos from cache`);
-        return NextResponse.json(cachedVideos);
+      // IMPORTANT: Skip in-memory cache on Vercel since serverless functions
+      // don't share memory. Each invocation might hit a different instance.
+      const isVercel = !!process.env.VERCEL;
+
+      // Check cache first to reduce B2 Class B transactions (only in local dev)
+      if (!isVercel) {
+        const cachedVideos = metadataCache.getVideoList();
+        if (cachedVideos) {
+          console.log(`Returning ${cachedVideos.length} videos from cache`);
+          return NextResponse.json(cachedVideos);
+        }
       }
 
       // Check rate limiting to prevent excessive API calls
@@ -335,14 +341,27 @@ export async function GET() {
         uploadDate: new Date(v.uploadDate),
       }));
 
-      // Cache the results to reduce future B2 API calls
-      metadataCache.setVideoList(standardizedVideos);
+      // Cache the results to reduce future B2 API calls (only in local dev)
+      if (!isVercel) {
+        metadataCache.setVideoList(standardizedVideos);
+      }
 
-      return NextResponse.json(standardizedVideos);
+      // Prevent caching on Vercel/CDN to ensure fresh data
+      return NextResponse.json(standardizedVideos, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+          'CDN-Cache-Control': 'no-store',
+          'Vercel-CDN-Cache-Control': 'no-store',
+        },
+      });
     } else {
       const metadataManager = new MetadataManager();
       const videos = await metadataManager.getAllMetadata();
-      return NextResponse.json(videos);
+      return NextResponse.json(videos, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, max-age=0',
+        },
+      });
     }
   } catch (error) {
     console.error('Error fetching videos:', error);
